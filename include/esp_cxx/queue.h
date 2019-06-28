@@ -33,10 +33,14 @@ class QueueBase {
 #ifndef FAKE_ESP_IDF
   // Takes ownership of an externally created FreeRTOS queue.
   explicit QueueBase(QueueHandle_t queue) : queue_(queue) {}
-#endif
 
+  bool IsId(Id id) const { return id == reinterpret_cast<Id>(queue_); }
+  Id id() const { return reinterpret_cast<Id>(queue_); }
+#else
   bool IsId(Id id) const { return id == queueset_fd_; }
   Id id() const { return queueset_fd_; }
+#endif
+
 
  protected:
   ~QueueBase();
@@ -46,10 +50,11 @@ class QueueBase {
   bool RawPop(void* obj, int timeout_ms = 0);
 
  private:
+  friend class QueueSet;
+
 #ifndef FAKE_ESP_IDF
   QueueHandle_t queue_ = nullptr;
 #else
-  friend class QueueSet;
 
   mutable std::mutex lock_{};
   mutable std::condition_variable on_push_{};

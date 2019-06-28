@@ -1,6 +1,8 @@
 #ifndef ESPCXX_CPOINTER_H_
 #define ESPCXX_CPOINTER_H_
 
+#include <memory>
+
 #include "cJSON.h"
 
 namespace esp_cxx {

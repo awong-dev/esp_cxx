@@ -3,7 +3,7 @@
 #include "esp_cxx/httpd/websocket.h"
 #include "esp_cxx/cpointer.h"
 
-#include "gtest/gtest_prod.h"
+//error#include "gtest/gtest_prod.h"
 
 struct cJSON;
 
@@ -27,9 +27,9 @@ class FirebaseDatabase {
   cJSON* Get(const std::string& path);
 
  private:
-  FRIEND_TEST(Firebase, PathUpdate);
-  FRIEND_TEST(Firebase, MergeUpdate);
-  FRIEND_TEST(Firebase, OverwriteUpdate);
+//  FRIEND_TEST(Firebase, PathUpdate);
+//  FRIEND_TEST(Firebase, MergeUpdate);
+//  FRIEND_TEST(Firebase, OverwriteUpdate);
 
   void GetPath(const std::string& path, cJSON** parent, cJSON** node,
                bool create_parent_path = false,

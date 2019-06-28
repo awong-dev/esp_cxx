@@ -2,6 +2,7 @@
 #define ESPCXX_EVENT_MANAGER_H_
 
 #include <array>
+#include <chrono>
 #include <functional>
 #include <unordered_map>
 
@@ -90,7 +91,7 @@ class QueueSetEventManager : public EventManager {
   QueueSet underlying_queue_set_;
 
 #ifndef FAKE_ESP_IDF
-#error Write semaphore code here.
+#warning Write semaphore code here.
 #else
   esp_cxx::Queue<char> wake_queue_{1};
 #endif
