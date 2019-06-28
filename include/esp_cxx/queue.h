@@ -10,6 +10,7 @@
 #ifndef FAKE_ESP_IDF
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #else
 #include <unistd.h>
 
@@ -33,7 +34,6 @@ class QueueBase {
 #ifndef FAKE_ESP_IDF
   // Takes ownership of an externally created FreeRTOS queue.
   explicit QueueBase(QueueHandle_t queue) : queue_(queue) {}
-
   bool IsId(Id id) const { return id == reinterpret_cast<Id>(queue_); }
   Id id() const { return reinterpret_cast<Id>(queue_); }
 #else
@@ -108,6 +108,10 @@ class QueueSet {
 
   void Add(QueueBase* queue);
   void Remove(QueueBase* queue);
+
+#ifndef FAKE_ESP_IDF
+  void Add(SemaphoreHandle_t semaphore);
+#endif
 
   QueueBase::Id Select(int timeout_ms);
 

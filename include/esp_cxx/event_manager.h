@@ -10,6 +10,11 @@
 #include "esp_cxx/queue.h"
 #include "mongoose.h"
 
+#ifndef FAKE_ESP_IDF
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#endif
+
 namespace esp_cxx {
 
 class EventManager {
@@ -91,7 +96,8 @@ class QueueSetEventManager : public EventManager {
   QueueSet underlying_queue_set_;
 
 #ifndef FAKE_ESP_IDF
-#warning Write semaphore code here.
+  static constexpr int kMaxWakes = 63;  // No good reason for this number.
+  SemaphoreHandle_t wake_semaphore_ = xSemaphoreCreateCounting(kMaxWakes, 0);
 #else
   esp_cxx::Queue<char> wake_queue_{1};
 #endif

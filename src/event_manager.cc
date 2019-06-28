@@ -88,6 +88,7 @@ EventManager::TimePoint EventManager::GetReadyClosures(
 QueueSetEventManager::QueueSetEventManager(int max_waiting_events)
   : underlying_queue_set_(max_waiting_events + 1) {
 #ifndef FAKE_ESP_IDF
+    underlying_queue_set_.Add(wake_semaphore_);
 #else
   Add(&wake_queue_, []{});
 #endif

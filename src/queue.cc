@@ -142,6 +142,12 @@ void QueueSet::Add(QueueBase* queue) {
 #endif
 }
 
+#ifndef FAKE_ESP_IDF
+void QueueSet::Add(SemaphoreHandle_t semaphore) {
+  xQueueAddToSet(semaphore, queue_set_);
+}
+#endif
+
 void QueueSet::Remove(QueueBase* queue) {
 #ifndef FAKE_ESP_IDF
   xQueueRemoveFromSet(queue->queue_, queue_set_);
