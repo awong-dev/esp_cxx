@@ -45,6 +45,10 @@ void FirebaseDatabase::Connect() {
   SendKeepalive();
 }
 
+void FirebaseDatabase::SetUpdateHandler(std::function<void(void)> on_update) {
+  on_update_ = on_update;
+}
+
 void FirebaseDatabase::Publish(const std::string& path,
                                unique_cJSON_ptr new_value) {
   // Example packet:
@@ -150,16 +154,19 @@ void FirebaseDatabase::OnWsFrame(WebsocketFrame frame) {
     case WebsocketOpcode::kText: {
       unique_cJSON_ptr json(cJSON_Parse(frame.data().data()));
       OnCommand(json.get());
+      if (on_update_) {
+        on_update_();
+      }
       break;
     }
 
-    case WebsocketOpcode::kPong:
     case WebsocketOpcode::kPing:
-      // TODO(awong): Send pong.
+      // Pong is already sent by mongoose. This is just a notification.
+    case WebsocketOpcode::kPong:
       break;
 
     case WebsocketOpcode::kClose:
-      // TODO(awong): Reconnect.
+      // TODO(awong): Invalidate socket. Reconnect.
       break;
 
     case WebsocketOpcode::kContinue:

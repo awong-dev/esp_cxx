@@ -123,12 +123,6 @@ void UpdateWifiConfig(std::string_view body, HttpResponse response) {
 }
 }  // namespace
 
-void IndexEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
-  response.Send(200, index_html_.size(), HttpResponse::kContentTypeHtml,
-                index_html_.data());
-}
-
-
 void StandardEndpoints::RegisterEndpoints(HttpServer* server) {
   server->RegisterEndpoint("/$", index_endpoint());
   server->RegisterEndpoint<&WifiConfigEndpoint>("/api/wificonfig$");

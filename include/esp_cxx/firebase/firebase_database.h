@@ -1,3 +1,7 @@
+#ifndef ESPCXX_FIREBASE_FIREBASE_DATABASE_H_
+#define ESPCXX_FIREBASE_FIREBASE_DATABASE_H_
+
+#include <functional>
 #include <string>
 
 #include "esp_cxx/httpd/websocket.h"
@@ -20,10 +24,16 @@ class FirebaseDatabase {
       MongooseEventManager* event_manager);
   ~FirebaseDatabase();
 
-  // Connects 
+  // Connects to the DB and processes updates.
   void Connect();
 
+  // Calls |on_update| when an update is received from the server.
+  void SetUpdateHandler(std::function<void(void)> on_update);
+
+  // Sends an update the firebase database.
   void Publish(const std::string& path, unique_cJSON_ptr new_value);
+
+  // Retrieves a fragment of the JSON tree.
   cJSON* Get(const std::string& path);
 
  private:
@@ -67,12 +77,15 @@ class FirebaseDatabase {
 
   std::string real_host_;
   std::string session_id_;
-//  int sever_timestamp_;
   size_t request_num_ = 0;
 
   WebsocketChannel websocket_;
   unique_cJSON_ptr root_;
   unique_cJSON_ptr update_template_;
+
+  std::function<void(void)> on_update_;
 };
 
 }  // namespace esp_cxx
+
+#endif  // ESPCXX_FIREBASE_FIREBASE_DATABASE_H_
