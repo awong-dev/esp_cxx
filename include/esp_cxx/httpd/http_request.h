@@ -22,7 +22,8 @@ enum class HttpMethod {
 
 class HttpRequest {
  public:
-  explicit HttpRequest(http_message* raw_frame);
+  HttpRequest() = default;
+  explicit HttpRequest(http_message* raw_message);
 
   std::string_view body() const { return ToStringView(raw_message_->body); }
   HttpMethod method() const { return method_; }

@@ -25,6 +25,7 @@ void HttpServer::Endpoint::OnHttpEventThunk(mg_connection *new_connection, int e
 
     case MG_EV_HTTP_MULTIPART_REQUEST_END:
       should_close = true;
+      [[fallthrough]];
     case MG_EV_HTTP_PART_BEGIN:
     case MG_EV_HTTP_PART_DATA:
     case MG_EV_HTTP_PART_END: {

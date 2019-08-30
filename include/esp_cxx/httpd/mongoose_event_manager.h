@@ -9,10 +9,18 @@
 
 namespace esp_cxx {
 
+class HttpRequest;
+
 class MongooseEventManager : public EventManager {
  public:
   MongooseEventManager();
   ~MongooseEventManager() override;
+
+  // Makes an http connection and asynchronously sends the result to |handler|
+  void HttpConnect(std::function<void(HttpRequest)> handler,
+                   const std::string& uri,
+                   const char* extra_headers = nullptr,
+                   const char* post_data = nullptr);
 
   mg_mgr* underlying_manager() { return &underlying_manager_; }
 
