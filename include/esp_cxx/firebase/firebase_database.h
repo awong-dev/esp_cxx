@@ -21,14 +21,17 @@ class FirebaseDatabase {
       const std::string& host,
       const std::string& database,
       const std::string& listen_path,
-      MongooseEventManager* event_manager);
+      MongooseEventManager* event_manager,
+      const std::string& auth_token_url = {},
+      const std::string& device_id = {},
+      const std::string& password = {});
   ~FirebaseDatabase();
 
   // Connects to the DB and processes updates.
   void Connect();
 
   // Calls |on_update| when an update is received from the server.
-  void SetUpdateHandler(std::function<void(void)> on_update);
+  void SetUpdateHandler(std::function<void()> on_update);
 
   // Sends an update the firebase database.
   void Publish(const std::string& path, unique_cJSON_ptr new_value);
@@ -67,23 +70,45 @@ class FirebaseDatabase {
   // Remove all null elements and objects with no entries.
   bool RemoveEmptyNodes(cJSON* node);
 
+  // Sends |text| over the |websocket_| if connected.
+  bool Send(std::string_view text);
+
   // Send Keepalive if connected.
   void SendKeepalive();
 
+  // Get the Firebase ID token, send it, and schedule a periodic refresh.
+  void SendAuthentication();
+
+  // Sends command to listen.
+  void SendVersion();
+  
+  // Sends command to listen.
+  void SendListen();
+
+  // Takes a json object that is just the body of a command, and then
+  // wraps it in the appropriate envelope for a data command.
+  int WrapDataCommand(const char* action, unique_cJSON_ptr* body);
+
+  // Basic connection configuration
   std::string host_;
   std::string database_;
   std::string listen_path_;
-  MongooseEventManager* event_manager_;
+  std::function<void(void)> on_update_;
 
+  // Network objects.
+  MongooseEventManager* event_manager_ = nullptr;
+  WebsocketChannel websocket_;
+
+  // Firebase protocol state information.
+  bool is_connected_ = false;
   std::string real_host_;
   std::string session_id_;
   size_t request_num_ = 0;
-
-  WebsocketChannel websocket_;
-  unique_cJSON_ptr root_;
   unique_cJSON_ptr update_template_;
+  std::string firebase_id_token_url_;
 
-  std::function<void(void)> on_update_;
+  // actual data.
+  unique_cJSON_ptr root_;
 };
 
 }  // namespace esp_cxx

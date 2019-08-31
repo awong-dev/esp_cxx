@@ -7,11 +7,13 @@ namespace esp_cxx {
 
 void HttpServer::Endpoint::OnHttpEventThunk(mg_connection *new_connection, int event,
                                             void *ev_data, void *user_data) {
+  ESP_LOGD(kEspCxxTag, "Thunked");
   Endpoint *endpoint = static_cast<Endpoint*>(user_data);
   bool should_close = false;
   switch (event) {
     case MG_EV_HTTP_REQUEST:
       should_close = true;
+      ESP_LOGD(kEspCxxTag, "Got request");
       endpoint->OnHttp(
           HttpRequest(static_cast<http_message*>(ev_data)),
           HttpResponse(new_connection));
@@ -67,6 +69,7 @@ void HttpServer::Endpoint::OnHttpEventThunk(mg_connection *new_connection, int e
     new_connection->flags |= MG_F_SEND_AND_CLOSE;
     HttpResponse response(new_connection);
     if (!response.HasSentHeaders()) {
+      ESP_LOGD(kEspCxxTag, "500");
       response.SendError(500);
     }
   }

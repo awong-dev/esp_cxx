@@ -1,14 +1,15 @@
 #include "esp_cxx/firebase/firebase_database.h"
-#include "esp_cxx/httpd/mongoose_event_manager.h"
-
-#include <array>
-
-#include "esp_cxx/logging.h"
 
 #include "cJSON.h"
 extern "C" {
 #include "cJSON_Utils.h"
 }
+
+#include <array>
+
+#include "esp_cxx/httpd/http_request.h"
+#include "esp_cxx/httpd/mongoose_event_manager.h"
+#include "esp_cxx/logging.h"
 
 namespace {
 
@@ -26,15 +27,21 @@ FirebaseDatabase::FirebaseDatabase(
     const std::string& host,
     const std::string& database,
     const std::string& listen_path,
-    MongooseEventManager* event_manager)
+    MongooseEventManager* event_manager,
+    const std::string& auth_token_url,
+    const std::string& device_id,
+    const std::string& password)
   : host_(host),
     database_(database),
     listen_path_(listen_path),
     event_manager_(event_manager),
     websocket_(event_manager_,
                "wss://" + host_ + "/.ws?v=5&ns=" + database_),
-    root_(cJSON_CreateObject()),
-    update_template_(cJSON_CreateObject()) {
+    update_template_(cJSON_CreateObject()),
+    firebase_id_token_url_(
+        auth_token_url.empty() ? std::string() : 
+        auth_token_url + "?device_id=" + device_id + "&password=" + password),
+    root_(cJSON_CreateObject()) {
 }
 
 FirebaseDatabase::~FirebaseDatabase() {
@@ -42,10 +49,14 @@ FirebaseDatabase::~FirebaseDatabase() {
 
 void FirebaseDatabase::Connect() {
   websocket_.Connect<FirebaseDatabase, &FirebaseDatabase::OnWsFrame>(this);
+  ESP_LOGI(kEspCxxTag, "Firebase connecting to %s", host_.c_str());
+  SendVersion();
   SendKeepalive();
+  SendAuthentication();
+  SendListen();
 }
 
-void FirebaseDatabase::SetUpdateHandler(std::function<void(void)> on_update) {
+void FirebaseDatabase::SetUpdateHandler(std::function<void()> on_update) {
   on_update_ = on_update;
 }
 
@@ -54,23 +65,17 @@ void FirebaseDatabase::Publish(const std::string& path,
   // Example packet:
   //  {"t":"d","d":{"r":4,"a":"p","b":{"p":"/test","d":{"hi":"mom","num":1547104593160},"h":""}}}
 
-  // Create data envlope.
-  unique_cJSON_ptr publish(cJSON_CreateObject());
-  cJSON_AddStringToObject(publish.get(), "t", "d");
-  cJSON* data = cJSON_AddObjectToObject(publish.get(), "d");
-
-  // Create publish request
-  cJSON_AddNumberToObject(data, "r", ++request_num_);
-  cJSON_AddStringToObject(data, "a", "p");
-  cJSON* body = cJSON_AddObjectToObject(data, "b");
-
   // Insert data.
-  cJSON_AddStringToObject(body, "p", path.c_str());
-  cJSON_AddItemToObject(body, "p", cJSON_Duplicate(new_value.get(), true));
+  unique_cJSON_ptr command(cJSON_CreateObject());
+  cJSON_AddStringToObject(command.get(), "p", path.c_str());
+  cJSON_AddItemToObject(command.get(), "d", cJSON_Duplicate(new_value.get(), true));
+  WrapDataCommand("p", &command);
 
   ReplacePath(path.c_str(), std::move(new_value));
 
-  websocket_.SendText(cJSON_PrintUnformatted(publish.get()));
+  Send(cJSON_PrintUnformatted(command.get()));
+  // TODO(awong): If disconnected then we should mark dirty and handle
+  // update merging.
 }
 
 cJSON* FirebaseDatabase::Get(const std::string& path) {
@@ -147,6 +152,7 @@ recur:
 }
 
 void FirebaseDatabase::OnWsFrame(WebsocketFrame frame) {
+  ESP_LOGI(kEspCxxTag, "got a frame");
   switch(frame.opcode()) {
     case WebsocketOpcode::kBinary:
       break;
@@ -205,8 +211,14 @@ void FirebaseDatabase::OnConnectionCommand(cJSON* command) {
   if (cJSON_IsString(type) && cJSON_IsString(host) && host->valuestring != nullptr) {
     real_host_ = host->valuestring;
     if (strcmp(type->valuestring, "h") == 0) {
-      // TODO(ajwong): Print other data? maybe?
+      // Example packet:
+      //  {"t":"h","d":{"ts":1547104612018,"v":"5","h":"s-usc1c-nss-205.firebaseio.com","s":"i3lclKY3LAjoEsoOZBrhjIEQlKan2pqa"}}
+      is_connected_ = true;
+      // TODO(awong): Get session_id from packet here.
+      SendAuthentication();
     } else if (strcmp(type->valuestring, "r") == 0) {
+      is_connected_ = false;
+      // TODO(awong): Should the tree be dropped? Probably not...
       // TODO(awong): Reconnect.
     }
   }
@@ -214,24 +226,35 @@ void FirebaseDatabase::OnConnectionCommand(cJSON* command) {
 
 void FirebaseDatabase::OnDataCommand(cJSON* command) {
   cJSON* request_id = cJSON_GetObjectItemCaseSensitive(command, "r");
-  cJSON* action = cJSON_GetObjectItemCaseSensitive(command, "a");
   cJSON* body = cJSON_GetObjectItemCaseSensitive(command, "b");
-  cJSON* path = cJSON_GetObjectItemCaseSensitive(body, "p");
-//  cJSON* hash = cJSON_GetObjectItemCaseSensitive(body, "h");
 
-  if ((!request_id || cJSON_IsNumber(request_id)) &&
-      cJSON_IsString(action) && action->valuestring != nullptr &&
+  if (request_id) {
+    // If a request_id exists, this is a response and the body
+    // has a "s" field for status with a "d" field for data.
+    //
+    // Example no error:
+    //   {"t":"d","d":{"r":1,"b":{"s":"ok","d":""}}}
+    // Example error:
+    //   {"t":"d","d":{"r":3,"b":{"s":"permission_denied","d":"Permission denied"}}}
+    //
+    // Since sends are infrequent, just log all responses.
+    ESP_LOGI(kEspCxxTag, "%s", cJSON_PrintUnformatted(command));
+  } else {
+    // If request_id does not exist, then this is an update from the server.
+    cJSON* action = cJSON_GetObjectItemCaseSensitive(command, "a");
+    //  cJSON* hash = cJSON_GetObjectItemCaseSensitive(body, "h");
+    if (cJSON_IsString(action) && action->valuestring != nullptr &&
       cJSON_IsObject(body)) {
-    // TODO(awong): Match the request_id? Do we even care to track?
-    // We can do skipped messages I guess.
-    // There are 2 action types received:
-    //   d - a JSON tree is being replaced.
-    //   m - a JSON tree should be merged. [ TODO(awong): what does this mean? Don't delete? ]
-    unique_cJSON_ptr new_data(cJSON_DetachItemFromObjectCaseSensitive(body, "d"));
-    if (strcmp(action->valuestring, "d") == 0) {
-      ReplacePath(path->valuestring, std::move(new_data));
-    } if (strcmp(action->valuestring, "m") == 0) {
-      MergePath(path->valuestring, std::move(new_data));
+      cJSON* path = cJSON_GetObjectItemCaseSensitive(body, "p");
+      // There are 2 action types received:
+      //   d - a JSON tree is being replaced.
+      //   m - a JSON tree should be merged. [ TODO(awong): what does this mean? Don't delete? ]
+      unique_cJSON_ptr new_data(cJSON_DetachItemFromObjectCaseSensitive(body, "d"));
+      if (strcmp(action->valuestring, "d") == 0) {
+        ReplacePath(path->valuestring, std::move(new_data));
+      } if (strcmp(action->valuestring, "m") == 0) {
+        MergePath(path->valuestring, std::move(new_data));
+      }
     }
   }
 }
@@ -268,10 +291,95 @@ void FirebaseDatabase::MergePath(const char* path, unique_cJSON_ptr new_data) {
   }
 }
 
+bool FirebaseDatabase::Send(std::string_view text) {
+  if (!is_connected_) {
+    return false;
+  }
+
+  websocket_.SendText(text);
+  return true;
+}
+
 void FirebaseDatabase::SendKeepalive() {
+  ESP_LOGI(kEspCxxTag, "Sending keepalive");
   static constexpr int kKeepAliveMs = 45000;
-  websocket_.SendText("0");
+  Send("0");
   event_manager_->RunDelayed([&] {SendKeepalive();}, kKeepAliveMs);
+}
+
+void FirebaseDatabase::SendAuthentication() {
+  if (firebase_id_token_url_.empty()) {
+    return;
+  }
+  ESP_LOGI(kEspCxxTag, "Sending Authentication");
+
+  auto handle_auth = [&](HttpRequest request) {
+    if (request.body().empty()) {
+      return;
+    }
+    unique_cJSON_ptr json(cJSON_Parse(request.body().data()));
+    unique_cJSON_ptr id_token(cJSON_DetachItemFromObjectCaseSensitive(json.get(), "id_token"));
+    cJSON* expires_in = cJSON_GetObjectItemCaseSensitive(json.get(), "expires_in");
+    if (!cJSON_IsString(id_token.get()) || !cJSON_IsNumber(expires_in)) {
+      return;
+    }
+
+    // Create auth request.
+    unique_cJSON_ptr command(cJSON_CreateObject());
+    cJSON_AddItemToObject(command.get(), "cred", id_token.release());
+    WrapDataCommand("auth", &command);
+
+    // Send authentication request.
+    Send(cJSON_PrintUnformatted(command.get()));
+
+    // Schedule the next authentication refresh at 2 mins before expiration.
+    event_manager_->RunDelayed([&] {SendAuthentication();},
+                               expires_in->valueint - 120);
+  };
+
+  event_manager_->HttpConnect(handle_auth, firebase_id_token_url_);
+}
+
+void FirebaseDatabase::SendListen() {
+  ESP_LOGI(kEspCxxTag, "Sending Listen");
+  // Add path.
+  unique_cJSON_ptr command(cJSON_CreateObject());
+  cJSON_AddStringToObject(command.get(), "p", listen_path_.c_str());
+  cJSON_AddStringToObject(command.get(), "h", "");
+
+  WrapDataCommand("q", &command);
+
+  Send(cJSON_PrintUnformatted(command.get()));
+}
+
+void FirebaseDatabase::SendVersion() {
+  ESP_LOGI(kEspCxxTag, "Sending version");
+  // Add path.
+  unique_cJSON_ptr command(cJSON_CreateObject());
+  // TODO(awong): Stamp the git commit hash of espcxx here.
+  cJSON* client_info = cJSON_AddObjectToObject(command.get(), "c");
+  cJSON_AddNumberToObject(client_info, "espcxx", 1);
+  WrapDataCommand("s", &command);
+
+  Send(cJSON_PrintUnformatted(command.get()));
+}
+
+int FirebaseDatabase::WrapDataCommand(const char* action,
+                                      unique_cJSON_ptr* body) {
+  // Create data envelope for auth.
+  unique_cJSON_ptr command(cJSON_CreateObject());
+  cJSON_AddStringToObject(command.get(), "t", "d");
+  cJSON* data = cJSON_AddObjectToObject(command.get(), "d");
+
+  // Add request number and action.
+  cJSON_AddNumberToObject(data, "r", ++request_num_);
+  cJSON_AddStringToObject(data, "a", action);
+
+  // Add body and swap it back.
+  body->swap(command);
+  cJSON_AddItemToObject(data, "b", command.release());  // command is old body.
+
+  return request_num_;
 }
 
 }  // namespace esp_cxx
