@@ -2,6 +2,7 @@
 #define ESPCXX_HTTPD_WEBSOCKET_H_
 
 #include <string>
+#include <functional>
 
 #include "esp_cxx/cxx17hack.h"
 #include "esp_cxx/httpd/util.h"
@@ -63,18 +64,20 @@ class WebsocketSender {
 
 class WebsocketChannel {
  public:
-  WebsocketChannel(MongooseEventManager* event_manager, const std::string& ws_url);
+  WebsocketChannel() = default;
+  WebsocketChannel(MongooseEventManager* event_manager,
+                   const std::string& ws_url,
+                   std::function<void(WebsocketFrame)> on_frame_cb);
   ~WebsocketChannel();
-  using OnFrameCb = void (*)(WebsocketFrame frame);
 
-  // Starts the websocket connection.
-  bool Connect(OnFrameCb on_frame_cb);
+  // Starts the websocket connection. Frames delivered to the |on_frame_cb|.
+  bool Connect();
 
-  template <typename T, void (T::*)(WebsocketFrame frame)>
-  void Connect(T* ptr) {
-    // TODO(awong): Implement this!
-  }
+  // Disconnects the Websocket. No frames delivered after this call. Connect()
+  // can be called again.
+  void Disconnect();
 
+  // Sends a Websocket text message if connected. Silently drops if disconnected.
   void SendText(std::string_view text);
 
  private:
@@ -82,13 +85,14 @@ class WebsocketChannel {
   static void OnWsEventThunk(mg_connection *new_connection, int event,
                              void *ev_data, void *user_data);
 
-  void (*on_frame_cb_)(WebsocketFrame frame) = nullptr;
-
   // Event manager for all connections on this HTTP server.
-  MongooseEventManager* event_manager_;
+  MongooseEventManager* event_manager_ = nullptr;
 
   // URL to connect to.
   std::string ws_url_;
+
+  // Called on each received frame.
+  std::function<void(WebsocketFrame)> on_frame_cb_;
 
   // Keeps track of the current connection. Allows for sending. If null, then
   // server should reconnect.

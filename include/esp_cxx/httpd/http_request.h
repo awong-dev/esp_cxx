@@ -30,6 +30,7 @@ class HttpRequest {
   std::string_view uri() const { return ToStringView(raw_message_->uri); }
   std::string_view proto() const { return ToStringView(raw_message_->proto); }
   std::string_view query_string() const { return ToStringView(raw_message_->query_string); }
+  int status() const { return raw_message_->resp_code; }
 
   std::string_view header_name(int n) const;
   std::string_view header_value(int n) const;

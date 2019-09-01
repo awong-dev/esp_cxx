@@ -7,25 +7,37 @@
 namespace esp_cxx {
 
 WebsocketChannel::WebsocketChannel(MongooseEventManager* event_manager,
-                                   const std::string& ws_url)
+                                   const std::string& ws_url,
+                                   std::function<void(WebsocketFrame)> on_frame_cb)
   : event_manager_(event_manager),
-    ws_url_(ws_url) {
+    ws_url_(ws_url),
+    on_frame_cb_(std::move(on_frame_cb)) {
 }
 
 WebsocketChannel::~WebsocketChannel() {
-  // TODO(awong) Close the connection.
+  // TODO(awong): Will this UAF an attempt to dispatch a CLOSE message?
+  Disconnect();
 }
 
-bool WebsocketChannel::Connect(OnFrameCb on_frame_cb) {
-  on_frame_cb_ = on_frame_cb;
+bool WebsocketChannel::Connect() {
+  ESP_LOGI(kEspCxxTag, "Websocket connecting to %s", ws_url_.c_str());
   connection_ = mg_connect_ws(event_manager_->underlying_manager(),
                               &WebsocketChannel::OnWsEventThunk,
                               this, ws_url_.c_str(), NULL, NULL);
   return !!connection_;
 }
 
+void WebsocketChannel::Disconnect() {
+  if (connection_) {
+    mg_send_websocket_frame(connection_, WEBSOCKET_OP_CLOSE, "", 0);
+    connection_ = nullptr;
+  }
+}
+
 void WebsocketChannel::SendText(std::string_view text) {
-  mg_send_websocket_frame(connection_, WEBSOCKET_OP_TEXT, text.data(), text.size());
+  if (connection_) {
+    mg_send_websocket_frame(connection_, WEBSOCKET_OP_TEXT, text.data(), text.size());
+  }
 }
 
 void WebsocketChannel::OnWsEvent(mg_connection *new_connection, int event, websocket_message *ev_data) {
@@ -34,6 +46,8 @@ void WebsocketChannel::OnWsEvent(mg_connection *new_connection, int event, webso
       int status = *((int *) ev_data);
       if (status != 0) {
         ESP_LOGW(kEspCxxTag, "WS Connect error: %d", status);
+      } else {
+        ESP_LOGI(kEspCxxTag, "WS Connect success");
       }
       break;
     }
@@ -46,13 +60,12 @@ void WebsocketChannel::OnWsEvent(mg_connection *new_connection, int event, webso
     case MG_EV_WEBSOCKET_FRAME:
       // Mongoose already handles merging fragmented messages. Thus a received
       // frame in mongoose IS a complete message. Pass it straight along.
-      if (on_frame_cb_) {
-        on_frame_cb_(WebsocketFrame(static_cast<websocket_message*>(ev_data)));
-      }
+      on_frame_cb_(WebsocketFrame(static_cast<websocket_message*>(ev_data)));
       break;
 
     case MG_EV_CLOSE:
       connection_ = nullptr;
+      ESP_LOGI(kEspCxxTag, "WS Connect closing");
       break;
   }
 }

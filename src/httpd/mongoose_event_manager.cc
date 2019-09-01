@@ -5,6 +5,7 @@
 
 #include "esp_cxx/event_manager.h"
 #include "esp_cxx/httpd/http_request.h"
+#include "esp_cxx/logging.h"
 
 namespace esp_cxx {
 
@@ -51,6 +52,7 @@ void MongooseEventManager::HttpConnect(std::function<void(HttpRequest)> handler,
                                        const std::string& uri,
                                        const char* extra_headers,
                                        const char* post_data) {
+  ESP_LOGI(kEspCxxTag, "HttpConnect: %s", uri.c_str());
   auto adaptor = std::make_unique<HttpRequestAdaptor>(std::move(handler));
   mg_connect_http(underlying_manager(), &HttpRequestAdaptor::HandleThunk,
                   adaptor.release(), uri.c_str(), extra_headers, post_data);

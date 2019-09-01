@@ -33,6 +33,14 @@ void EventManager::Loop() {
    TimePoint next_wake = TimePoint::max();
 
   while (!has_quit_) {
+    // Run the closures.
+    ClosureList to_run;
+    int num_to_run = 0;
+    next_wake = GetReadyClosures(&to_run, &num_to_run, std::chrono::steady_clock::now());
+    for (size_t i = 0; i < num_to_run; i++) {
+      to_run[i].thunk();
+    }
+
     // Do the poll.
     auto timeout_ms = next_wake - std::chrono::steady_clock::now();
     auto raw_ms = std::chrono::duration_cast<std::chrono::milliseconds>(timeout_ms).count();
@@ -41,15 +49,8 @@ void EventManager::Loop() {
     if (raw_ms < actual_timeout_ms) {
       actual_timeout_ms = std::max(0, static_cast<int>(raw_ms));
     }
-    Poll(actual_timeout_ms);
 
-    // Run the closures.
-    ClosureList to_run;
-    int num_to_run = 0;
-    next_wake = GetReadyClosures(&to_run, &num_to_run, std::chrono::steady_clock::now());
-    for (size_t i = 0; i < num_to_run; i++) {
-      to_run[i].thunk();
-    }
+    Poll(actual_timeout_ms);
   }
 }
 
@@ -117,6 +118,7 @@ void QueueSetEventManager::Poll(int timeout_ms) {
 
 void QueueSetEventManager::Wake() {
 #ifndef FAKE_ESP_IDF
+  xSemaphoreGive(wake_semaphore_);
 #else
   wake_queue_.Push('w');
 #endif

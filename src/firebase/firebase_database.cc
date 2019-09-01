@@ -36,7 +36,8 @@ FirebaseDatabase::FirebaseDatabase(
     listen_path_(listen_path),
     event_manager_(event_manager),
     websocket_(event_manager_,
-               "wss://" + host_ + "/.ws?v=5&ns=" + database_),
+               "wss://" + host_ + "/.ws?v=5&ns=" + database_,
+               [&](WebsocketFrame frame) { OnWsFrame(std::move(frame)); }),
     update_template_(cJSON_CreateObject()),
     firebase_id_token_url_(
         auth_token_url.empty() ? std::string() : 
@@ -48,12 +49,16 @@ FirebaseDatabase::~FirebaseDatabase() {
 }
 
 void FirebaseDatabase::Connect() {
-  websocket_.Connect<FirebaseDatabase, &FirebaseDatabase::OnWsFrame>(this);
-  ESP_LOGI(kEspCxxTag, "Firebase connecting to %s", host_.c_str());
+  if (!(websocket_.Connect())) {
+    ESP_LOGE(kEspCxxTag, "Websocket connect failure");
+  }
+}
+
+void FirebaseDatabase::SendPostConnectCommands() {
+  assert(is_connected());
   SendVersion();
-  SendKeepalive();
-  SendAuthentication();
-  SendListen();
+  SendKeepalive(connect_generation_);
+  SendAuthentication(connect_generation_);
 }
 
 void FirebaseDatabase::SetUpdateHandler(std::function<void()> on_update) {
@@ -152,13 +157,13 @@ recur:
 }
 
 void FirebaseDatabase::OnWsFrame(WebsocketFrame frame) {
-  ESP_LOGI(kEspCxxTag, "got a frame");
   switch(frame.opcode()) {
     case WebsocketOpcode::kBinary:
       break;
 
     case WebsocketOpcode::kText: {
       unique_cJSON_ptr json(cJSON_Parse(frame.data().data()));
+      ESP_LOGI(kEspCxxTag, "Recv: %s", cJSON_PrintUnformatted(json.get()));
       OnCommand(json.get());
       if (on_update_) {
         on_update_();
@@ -172,7 +177,10 @@ void FirebaseDatabase::OnWsFrame(WebsocketFrame frame) {
       break;
 
     case WebsocketOpcode::kClose:
-      // TODO(awong): Invalidate socket. Reconnect.
+      Disconnect();
+      // If connection is closed, reconnect in 10 seconds to avoid hammering
+      // in a tight loop.
+      event_manager_->RunDelayed([&] {Connect();}, 5000);
       break;
 
     case WebsocketOpcode::kContinue:
@@ -213,13 +221,17 @@ void FirebaseDatabase::OnConnectionCommand(cJSON* command) {
     if (strcmp(type->valuestring, "h") == 0) {
       // Example packet:
       //  {"t":"h","d":{"ts":1547104612018,"v":"5","h":"s-usc1c-nss-205.firebaseio.com","s":"i3lclKY3LAjoEsoOZBrhjIEQlKan2pqa"}}
-      is_connected_ = true;
-      // TODO(awong): Get session_id from packet here.
-      SendAuthentication();
+      cJSON* session_id = cJSON_GetObjectItemCaseSensitive(data, "s");
+      if (cJSON_IsString(type)) {
+        session_id_ = session_id->valuestring;
+      }
+      connect_state_ |= kConnectedBit;
+      ESP_LOGI(kEspCxxTag, "Database Connected.");
+      SendPostConnectCommands();
     } else if (strcmp(type->valuestring, "r") == 0) {
-      is_connected_ = false;
+      Disconnect();
       // TODO(awong): Should the tree be dropped? Probably not...
-      // TODO(awong): Reconnect.
+      // TODO(awong): Reconnect to new URL?
     }
   }
 }
@@ -239,6 +251,21 @@ void FirebaseDatabase::OnDataCommand(cJSON* command) {
     //
     // Since sends are infrequent, just log all responses.
     ESP_LOGI(kEspCxxTag, "%s", cJSON_PrintUnformatted(command));
+    if (cJSON_IsNumber(request_id)) {
+      cJSON* status = cJSON_GetObjectItemCaseSensitive(body, "s");
+      if (cJSON_IsString(status) && strncmp("ok", status->valuestring, 2) == 0) {
+        int r = request_id->valueint;
+        if (r == auth_request_num_) {
+          connect_state_ |= kAuthBit;
+          ESP_LOGI(kEspCxxTag, "Database Authenticated.");
+          auth_request_num_ = -1;
+        } else if (r == listen_request_num_) {
+          connect_state_ |= kListenBit;
+          ESP_LOGI(kEspCxxTag, "Database Listening.");
+          listen_request_num_ = -1;
+        }
+      }
+    }
   } else {
     // If request_id does not exist, then this is an update from the server.
     cJSON* action = cJSON_GetObjectItemCaseSensitive(command, "a");
@@ -291,69 +318,56 @@ void FirebaseDatabase::MergePath(const char* path, unique_cJSON_ptr new_data) {
   }
 }
 
-bool FirebaseDatabase::Send(std::string_view text) {
-  if (!is_connected_) {
+bool FirebaseDatabase::Send(std::string_view text, bool should_log) {
+  if (!is_connected()) {
     return false;
+  }
+
+  if (should_log) {
+    ESP_LOGI(kEspCxxTag, "Send: %.*s", text.length(), text.data());
   }
 
   websocket_.SendText(text);
   return true;
 }
 
-void FirebaseDatabase::SendKeepalive() {
-  ESP_LOGI(kEspCxxTag, "Sending keepalive");
+void FirebaseDatabase::SendKeepalive(int generation) {
   static constexpr int kKeepAliveMs = 45000;
-  Send("0");
-  event_manager_->RunDelayed([&] {SendKeepalive();}, kKeepAliveMs);
+  Send("0", false);
+  if (connect_generation_ == generation) {
+    event_manager_->RunDelayed(
+        [&, generation] { SendKeepalive(generation); },
+        kKeepAliveMs);
+  }
 }
 
-void FirebaseDatabase::SendAuthentication() {
+void FirebaseDatabase::SendAuthentication(int generation) {
   if (firebase_id_token_url_.empty()) {
+    SendListenIfNeeded();
     return;
   }
-  ESP_LOGI(kEspCxxTag, "Sending Authentication");
 
-  auto handle_auth = [&](HttpRequest request) {
-    if (request.body().empty()) {
-      return;
-    }
-    unique_cJSON_ptr json(cJSON_Parse(request.body().data()));
-    unique_cJSON_ptr id_token(cJSON_DetachItemFromObjectCaseSensitive(json.get(), "id_token"));
-    cJSON* expires_in = cJSON_GetObjectItemCaseSensitive(json.get(), "expires_in");
-    if (!cJSON_IsString(id_token.get()) || !cJSON_IsNumber(expires_in)) {
-      return;
-    }
-
-    // Create auth request.
-    unique_cJSON_ptr command(cJSON_CreateObject());
-    cJSON_AddItemToObject(command.get(), "cred", id_token.release());
-    WrapDataCommand("auth", &command);
-
-    // Send authentication request.
-    Send(cJSON_PrintUnformatted(command.get()));
-
-    // Schedule the next authentication refresh at 2 mins before expiration.
-    event_manager_->RunDelayed([&] {SendAuthentication();},
-                               expires_in->valueint - 120);
-  };
-
-  event_manager_->HttpConnect(handle_auth, firebase_id_token_url_);
+  event_manager_->HttpConnect(
+      [&, generation](HttpRequest request) { HandleAuth(request, generation); },
+      firebase_id_token_url_);
 }
 
-void FirebaseDatabase::SendListen() {
-  ESP_LOGI(kEspCxxTag, "Sending Listen");
+void FirebaseDatabase::SendListenIfNeeded() {
+  if (is_listening()) {
+    return;
+  }
+  
   // Add path.
   unique_cJSON_ptr command(cJSON_CreateObject());
   cJSON_AddStringToObject(command.get(), "p", listen_path_.c_str());
   cJSON_AddStringToObject(command.get(), "h", "");
 
-  WrapDataCommand("q", &command);
+  listen_request_num_ = WrapDataCommand("q", &command);
 
   Send(cJSON_PrintUnformatted(command.get()));
 }
 
 void FirebaseDatabase::SendVersion() {
-  ESP_LOGI(kEspCxxTag, "Sending version");
   // Add path.
   unique_cJSON_ptr command(cJSON_CreateObject());
   // TODO(awong): Stamp the git commit hash of espcxx here.
@@ -380,6 +394,52 @@ int FirebaseDatabase::WrapDataCommand(const char* action,
   cJSON_AddItemToObject(data, "b", command.release());  // command is old body.
 
   return request_num_;
+}
+
+void FirebaseDatabase::HandleAuth(HttpRequest request, int generation) {
+  if (request.body().empty()) {
+    return;
+  }
+
+  ESP_LOGI(kEspCxxTag, "Received auth: %d, \nbody: %.*s",
+           request.status(),
+           request.body().length(), request.body().data());
+  std::string body(request.body());
+  unique_cJSON_ptr json(cJSON_Parse(request.body().data()));
+  if (!json) {
+    ESP_LOGW(kEspCxxTag, "Json parse error. Aborting authentication.");
+    return;
+  }
+  unique_cJSON_ptr id_token(cJSON_DetachItemFromObjectCaseSensitive(json.get(), "id_token"));
+  cJSON* expires_in = cJSON_GetObjectItemCaseSensitive(json.get(), "expires_in");
+  if (!cJSON_IsString(id_token.get()) || !cJSON_IsNumber(expires_in)) {
+    ESP_LOGW(kEspCxxTag, "Failed parsing ID token");
+    return;
+  }
+
+  // Create auth request.
+  unique_cJSON_ptr command(cJSON_CreateObject());
+  cJSON_AddItemToObject(command.get(), "cred", id_token.release());
+  auth_request_num_ = WrapDataCommand("auth", &command);
+
+  // Send authentication request.
+  Send(cJSON_PrintUnformatted(command.get()));
+
+  // Send listen command if necessary. On subsequent auths, this is likely
+  // a no-op.
+  SendListenIfNeeded();
+
+  // Schedule the next authentication refresh at 2 mins before expiration.
+  if (connect_generation_ == generation) {
+    event_manager_->RunDelayed([&, generation] {SendAuthentication(generation);},
+                               (expires_in->valueint - 120) * 1000);
+  }
+}
+
+void FirebaseDatabase::Disconnect() {
+  connect_generation_++;
+  connect_state_ = 0;
+  websocket_.Disconnect();
 }
 
 }  // namespace esp_cxx
