@@ -177,10 +177,7 @@ void FirebaseDatabase::OnWsFrame(WebsocketFrame frame) {
       break;
 
     case WebsocketOpcode::kClose:
-      Disconnect();
-      // If connection is closed, reconnect in 10 seconds to avoid hammering
-      // in a tight loop.
-      event_manager_->RunDelayed([&] {Connect();}, 5000);
+      Reconnect();
       break;
 
     case WebsocketOpcode::kContinue:
@@ -201,21 +198,24 @@ void FirebaseDatabase::OnCommand(cJSON* command) {
     //       redirect info.
     //   d = data commands such as publishing new database entries.
     if (strcmp(type->valuestring, "c") == 0) {
-      OnConnectionCommand(data);
+      OnControlCommand(data);
     } else if (strcmp(type->valuestring, "d") == 0) {
       OnDataCommand(data);
     }
   }
 }
 
-void FirebaseDatabase::OnConnectionCommand(cJSON* command) {
+void FirebaseDatabase::OnControlCommand(cJSON* command) {
   cJSON* type = cJSON_GetObjectItemCaseSensitive(command, "t");
   cJSON* data = cJSON_GetObjectItemCaseSensitive(command, "d");
   cJSON* host = cJSON_GetObjectItemCaseSensitive(data, "h");
 
   // Two types of connection requests
-  //   h - host data
-  //   r - redirect.
+  //   h - server hello host data
+  //   r - reset
+  //   e - error
+  //   e - server pong
+  //   n - end transmission
   if (cJSON_IsString(type) && cJSON_IsString(host) && host->valuestring != nullptr) {
     real_host_ = host->valuestring;
     if (strcmp(type->valuestring, "h") == 0) {
@@ -229,9 +229,7 @@ void FirebaseDatabase::OnConnectionCommand(cJSON* command) {
       ESP_LOGI(kEspCxxTag, "Database Connected.");
       SendPostConnectCommands();
     } else if (strcmp(type->valuestring, "r") == 0) {
-      Disconnect();
-      // TODO(awong): Should the tree be dropped? Probably not...
-      // TODO(awong): Reconnect to new URL?
+      Reconnect();
     }
   }
 }
@@ -436,10 +434,14 @@ void FirebaseDatabase::HandleAuth(HttpRequest request, int generation) {
   }
 }
 
-void FirebaseDatabase::Disconnect() {
+void FirebaseDatabase::Reconnect() {
   connect_generation_++;
   connect_state_ = 0;
   websocket_.Disconnect();
+
+  // If connection is closed, reconnect in 10 seconds to avoid hammering
+  // in a tight loop.
+  event_manager_->RunDelayed([&] {Connect();}, 5000);
 }
 
 }  // namespace esp_cxx

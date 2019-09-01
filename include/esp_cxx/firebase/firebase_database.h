@@ -71,7 +71,7 @@ class FirebaseDatabase {
   void OnCommand(cJSON* command);
 
   // Handles commands with an envelope of of type "c".
-  void OnConnectionCommand(cJSON* command);
+  void OnControlCommand(cJSON* command);
 
   // Handles commands with an envelope of of type "d".
   void OnDataCommand(cJSON* command);
@@ -110,8 +110,8 @@ class FirebaseDatabase {
   // is used to cancel the refresh loop on disconnect.
   void HandleAuth(HttpRequest request, int generation);
 
-  // Disconnects the underlying WebSocket.
-  void Disconnect();
+  // Reinitiates the connection with a delay to avoid banging the server.
+  void Reconnect();
 
   // Basic connection configuration
   std::string host_;
