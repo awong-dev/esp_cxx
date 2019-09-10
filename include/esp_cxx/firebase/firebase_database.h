@@ -49,6 +49,7 @@ class FirebaseDatabase {
     kConnectedBit = 0x1,
     kAuthBit = 0x2,
     kListenBit = 0x4,
+    kReconnectingBit = 0x4,
   };
 
   bool is_connected() const { return connect_state_ & kConnectedBit; }

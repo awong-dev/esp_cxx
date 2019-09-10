@@ -8,10 +8,12 @@ namespace esp_cxx {
 
 WebsocketChannel::WebsocketChannel(MongooseEventManager* event_manager,
                                    const std::string& ws_url,
-                                   std::function<void(WebsocketFrame)> on_frame_cb)
+                                   std::function<void(WebsocketFrame)> on_frame_cb,
+                                   std::function<void(void)> on_disconnect_cb)
   : event_manager_(event_manager),
     ws_url_(ws_url),
-    on_frame_cb_(std::move(on_frame_cb)) {
+    on_frame_cb_(std::move(on_frame_cb)),
+    on_disconnect_cb_(std::move(on_disconnect_cb)) {
 }
 
 WebsocketChannel::~WebsocketChannel() {
@@ -29,8 +31,10 @@ bool WebsocketChannel::Connect() {
 
 void WebsocketChannel::Disconnect() {
   if (connection_) {
+    ESP_LOGI(kEspCxxTag, "Disconnecting");
     mg_send_websocket_frame(connection_, WEBSOCKET_OP_CLOSE, "", 0);
     connection_ = nullptr;
+    on_disconnect_cb_();
   }
 }
 
@@ -64,8 +68,9 @@ void WebsocketChannel::OnWsEvent(mg_connection *new_connection, int event, webso
       break;
 
     case MG_EV_CLOSE:
+      ESP_LOGI(kEspCxxTag, "WS closed by remote");
       connection_ = nullptr;
-      ESP_LOGI(kEspCxxTag, "WS Connect closing");
+      on_disconnect_cb_();
       break;
   }
 }

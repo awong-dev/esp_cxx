@@ -37,7 +37,13 @@ FirebaseDatabase::FirebaseDatabase(
     event_manager_(event_manager),
     websocket_(event_manager_,
                "wss://" + host_ + "/.ws?v=5&ns=" + database_,
-               [&](WebsocketFrame frame) { OnWsFrame(std::move(frame)); }),
+               [this](WebsocketFrame frame) { OnWsFrame(std::move(frame)); },
+               [this] {
+                 // Send reconnect on a different event frame to avoid reentrancy.
+                 event_manager_->Run([this]{
+                                     Reconnect();
+                                     });
+               }),
     update_template_(cJSON_CreateObject()),
     firebase_id_token_url_(
         auth_token_url.empty() ? std::string() : 
@@ -49,8 +55,10 @@ FirebaseDatabase::~FirebaseDatabase() {
 }
 
 void FirebaseDatabase::Connect() {
+  connect_state_ = 0;  // Clear all bits, including reconnecting.
   if (!(websocket_.Connect())) {
     ESP_LOGE(kEspCxxTag, "Websocket connect failure");
+    Reconnect();  // TODO(awong): Implement backoff and jitter.
   }
 }
 
@@ -177,7 +185,7 @@ void FirebaseDatabase::OnWsFrame(WebsocketFrame frame) {
       break;
 
     case WebsocketOpcode::kClose:
-      Reconnect();
+      // Do nothing. The |on_disconnect_cb| in WebsocketChannel will be called.
       break;
 
     case WebsocketOpcode::kContinue:
@@ -330,23 +338,31 @@ bool FirebaseDatabase::Send(std::string_view text, bool should_log) {
 }
 
 void FirebaseDatabase::SendKeepalive(int generation) {
+  if (connect_generation_ != generation) {
+    // This has been cancelled.
+    return;
+  }
+
   static constexpr int kKeepAliveMs = 45000;
   Send("0", false);
-  if (connect_generation_ == generation) {
-    event_manager_->RunDelayed(
-        [&, generation] { SendKeepalive(generation); },
-        kKeepAliveMs);
-  }
+  event_manager_->RunDelayed(
+      [this, generation] { SendKeepalive(generation); },
+      kKeepAliveMs);
 }
 
 void FirebaseDatabase::SendAuthentication(int generation) {
+  if (connect_generation_ != generation) {
+    // This has been cancelled.
+    return;
+  }
+
   if (firebase_id_token_url_.empty()) {
     SendListenIfNeeded();
     return;
   }
 
   event_manager_->HttpConnect(
-      [&, generation](HttpRequest request) { HandleAuth(request, generation); },
+      [this, generation](HttpRequest request) { HandleAuth(request, generation); },
       firebase_id_token_url_);
 }
 
@@ -395,6 +411,10 @@ int FirebaseDatabase::WrapDataCommand(const char* action,
 }
 
 void FirebaseDatabase::HandleAuth(HttpRequest request, int generation) {
+  if (connect_generation_ != generation) {
+    // This has been cancelled.
+    return;
+  }
   if (request.body().empty()) {
     return;
   }
@@ -428,20 +448,23 @@ void FirebaseDatabase::HandleAuth(HttpRequest request, int generation) {
   SendListenIfNeeded();
 
   // Schedule the next authentication refresh at 2 mins before expiration.
-  if (connect_generation_ == generation) {
-    event_manager_->RunDelayed([&, generation] {SendAuthentication(generation);},
-                               (expires_in->valueint - 120) * 1000);
-  }
+  event_manager_->RunDelayed([&, generation] {SendAuthentication(generation);},
+                             (expires_in->valueint - 120) * 1000);
 }
 
 void FirebaseDatabase::Reconnect() {
+  if (connect_state_ & kReconnectingBit) {
+    // Don't reconnect while reconnecting.
+    return;
+  }
+
   connect_generation_++;
-  connect_state_ = 0;
+  connect_state_ = kReconnectingBit;
   websocket_.Disconnect();
 
   // If connection is closed, reconnect in 10 seconds to avoid hammering
   // in a tight loop.
-  event_manager_->RunDelayed([&] {Connect();}, 5000);
+  event_manager_->RunDelayed([this] { Connect(); }, 5000);
 }
 
 }  // namespace esp_cxx

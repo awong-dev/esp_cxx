@@ -67,7 +67,8 @@ class WebsocketChannel {
   WebsocketChannel() = default;
   WebsocketChannel(MongooseEventManager* event_manager,
                    const std::string& ws_url,
-                   std::function<void(WebsocketFrame)> on_frame_cb);
+                   std::function<void(WebsocketFrame)> on_frame_cb,
+                   std::function<void(void)> on_disconnect_cb);
   ~WebsocketChannel();
 
   // Starts the websocket connection. Frames delivered to the |on_frame_cb|.
@@ -93,6 +94,9 @@ class WebsocketChannel {
 
   // Called on each received frame.
   std::function<void(WebsocketFrame)> on_frame_cb_;
+
+  // Called when disconnected.
+  std::function<void(void)> on_disconnect_cb_;
 
   // Keeps track of the current connection. Allows for sending. If null, then
   // server should reconnect.
