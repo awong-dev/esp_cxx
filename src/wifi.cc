@@ -30,82 +30,17 @@ namespace {
 constexpr char kSsidNvsKey[] = "ssid";
 constexpr char kPasswordNvsKey[] = "password";
 
-#ifndef FAKE_ESP_IDF
-
-/* FreeRTOS event group to signal when we are connected*/
-// TODO(awong): Why are we bothering with this signal? Can't an atomic be used?
-EventGroupHandle_t g_wifi_event_group;
-
-/* The event group allows multiple bits for each event,
-   but we only care about one event - are we connected
-   to the AP with an IP? */
-constexpr int WIFI_CONNECTED_BIT = BIT0;
-
-esp_err_t EspEventHandler(void *ctx, system_event_t *event) {
-    switch(event->event_id) {
-    case SYSTEM_EVENT_STA_START:
-        ESP_LOGI(kEspCxxTag, "STA_START.");
-        esp_wifi_connect();
-        break;
-    case SYSTEM_EVENT_STA_GOT_IP:
-        ESP_LOGI(kEspCxxTag, "got ip:%s",
-                 ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
-        xEventGroupSetBits(g_wifi_event_group, WIFI_CONNECTED_BIT);
-        break;
-    case SYSTEM_EVENT_AP_STACONNECTED:
-        ESP_LOGI(kEspCxxTag, "station:" MACSTR " join, AID=%d",
-                 MAC2STR(event->event_info.sta_connected.mac),
-                 event->event_info.sta_connected.aid);
-        break;
-    case SYSTEM_EVENT_AP_STADISCONNECTED:
-        ESP_LOGI(kEspCxxTag, "station:" MACSTR "leave, AID=%d",
-                 MAC2STR(event->event_info.sta_disconnected.mac),
-                 event->event_info.sta_disconnected.aid);
-        break;
-    case SYSTEM_EVENT_STA_DISCONNECTED:
-        ESP_LOGI(kEspCxxTag, "STA_DISCONNECTED. %d", event->event_info.disconnected.reason);
-        esp_wifi_connect();
-        xEventGroupClearBits(g_wifi_event_group, WIFI_CONNECTED_BIT);
-        break;
-    default:
-        break;
-    }
-    return ESP_OK;
-}
-
-void WifiConnect(const wifi_config_t& wifi_config, bool is_station) {
-  g_wifi_event_group = xEventGroupCreate();
-
-  tcpip_adapter_init();
-  ESP_ERROR_CHECK(esp_event_loop_init(&EspEventHandler, NULL) );
-
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-  if (is_station) {
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA,
-                                        const_cast<wifi_config_t*>(&wifi_config)));
-  } else {
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP,
-                                        const_cast<wifi_config_t*>(&wifi_config)));
-  }
-  ESP_ERROR_CHECK(esp_wifi_start());
-
-  ESP_LOGI(kEspCxxTag, "wifi_init finished.");
-  ESP_LOGI(kEspCxxTag, "%s SSID:%s password:%s",
-           is_station ? "connect to ap" : "created network",
-           wifi_config.sta.ssid, wifi_config.sta.password);
-}
-#endif  // FAKE_ESP_IDF
-
 }  // namespace
 
 Wifi::Wifi() = default;
 
 Wifi::~Wifi() {
   Disconnect();
+}
+
+Wifi* Wifi::GetInstance() {
+  static Wifi wifi;
+  return &wifi;
 }
 
 std::optional<std::string> Wifi::GetSsid() {
@@ -134,6 +69,12 @@ void Wifi::SetPassword(const std::string& password) {
   nvs_wifi_config.SetString(kPasswordNvsKey, password);
 }
 
+void Wifi::SetApEventHandlers(
+    std::function<void(ip_event_got_ip_t*)> on_ap_connect,
+    std::function<void(uint8_t)> on_ap_disconnect) {
+  on_ap_connect_ = std::move(on_ap_connect);
+  on_ap_disconnect_ = std::move(on_ap_disconnect);
+}
 bool Wifi::ConnectToAP() {
 #ifndef FAKE_ESP_IDF
   wifi_config_t wifi_config = {};
@@ -159,6 +100,12 @@ bool Wifi::ConnectToAP() {
   WifiConnect(wifi_config, true);
 #endif
   return true;
+}
+
+void Wifi::ReconnectToAP() {
+#ifndef FAKE_ESP_IDF
+  esp_wifi_connect();
+#endif
 }
 
 bool Wifi::CreateSetupNetwork(const std::string& setup_ssid,
@@ -198,5 +145,90 @@ void Wifi::Disconnect() {
   esp_wifi_stop();
 #endif  // FAKE_ESP_IDF
 }
+
+#ifndef FAKE_ESP_IDF
+
+void Wifi::EventHandlerThunk(void* arg, esp_event_base_t event_base,
+                             int32_t event_id, void* event_data) {
+  Wifi* wifi = reinterpret_cast<Wifi*>(arg);
+  wifi->OnWifiEvent(event_base, event_id, event_data);
+}
+
+void Wifi::OnWifiEvent(esp_event_base_t event_base, int32_t event_id,
+                       void* event_data) {
+  if (event_base == WIFI_EVENT) {
+    switch(event_id) {
+      case WIFI_EVENT_STA_START:
+        ESP_LOGI(kEspCxxTag, "STA_START.");
+        esp_wifi_connect();
+        break;
+      case WIFI_EVENT_STA_DISCONNECTED: {
+        wifi_event_sta_disconnected_t* disconnected_info =
+            reinterpret_cast<wifi_event_sta_disconnected_t*>(event_data);
+        ESP_LOGI(kEspCxxTag, "STA_DISCONNECTED. %d", disconnected_info->reason);
+        if (on_ap_disconnect_) {
+          on_ap_disconnect_(disconnected_info->reason);
+        }
+        break;
+      }
+
+      case WIFI_EVENT_AP_STACONNECTED: {
+        wifi_event_ap_staconnected_t *ap_connected =
+            reinterpret_cast<wifi_event_ap_staconnected_t*>(event_data);
+        ESP_LOGI(kEspCxxTag, "station:" MACSTR " join, AID=%d",
+                 MAC2STR(ap_connected->mac), ap_connected->aid);
+        break;
+      }
+      case WIFI_EVENT_AP_STADISCONNECTED: {
+        wifi_event_ap_stadisconnected_t *ap_disconnected =
+            reinterpret_cast<wifi_event_ap_stadisconnected_t*>(event_data);
+        ESP_LOGI(kEspCxxTag, "station:" MACSTR "leave, AID=%d",
+                 MAC2STR(ap_disconnected->mac), ap_disconnected->aid);
+        break;
+      }
+      default:
+        break;
+    }
+  } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+    ip_event_got_ip_t *got_ip =
+        reinterpret_cast<ip_event_got_ip_t*>(event_data);
+    ESP_LOGI(kEspCxxTag, "got ip:%s", ip4addr_ntoa(&got_ip->ip_info.ip));
+    if (on_ap_connect_) {
+      on_ap_connect_(got_ip);
+    }
+  }
+}
+
+void Wifi::WifiConnect(const wifi_config_t& wifi_config, bool is_station) {
+  tcpip_adapter_init();
+
+  ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+  ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                             &EventHandlerThunk, this));
+  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                             &EventHandlerThunk, this));
+
+  if (is_station) {
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA,
+                                        const_cast<wifi_config_t*>(&wifi_config)));
+  } else {
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP,
+                                        const_cast<wifi_config_t*>(&wifi_config)));
+  }
+  ESP_ERROR_CHECK(esp_wifi_start());
+
+  ESP_LOGI(kEspCxxTag, "wifi_init finished.");
+  ESP_LOGI(kEspCxxTag, "%s SSID:%s password:%s",
+           is_station ? "connect to ap" : "created network",
+           wifi_config.sta.ssid, wifi_config.sta.password);
+}
+
+#endif  // FAKE_ESP_IDF
 
 }  // namespace esp_cxx

@@ -31,6 +31,9 @@ class FirebaseDatabase {
   // Connects to the DB and processes updates.
   void Connect();
 
+  // Disconnets from the DB.
+  void Disconnect();
+
   // Calls |on_update| when an update is received from the server.
   void SetUpdateHandler(std::function<void()> on_update);
 

@@ -62,6 +62,11 @@ void FirebaseDatabase::Connect() {
   }
 }
 
+void FirebaseDatabase::Disconnect() {
+  connect_generation_++;
+  websocket_.Disconnect();
+}
+
 void FirebaseDatabase::SendPostConnectCommands() {
   assert(is_connected());
   SendVersion();
@@ -458,12 +463,11 @@ void FirebaseDatabase::Reconnect() {
     return;
   }
 
-  connect_generation_++;
-  connect_state_ = kReconnectingBit;
-  websocket_.Disconnect();
+  Disconnect();
 
-  // If connection is closed, reconnect in 10 seconds to avoid hammering
-  // in a tight loop.
+  // Reconnect in 5 seconds to avoid hammering in a tight loop.
+  // TODO(awong): Exponential backoff.
+  connect_state_ = kReconnectingBit;
   event_manager_->RunDelayed([this] { Connect(); }, 5000);
 }
 
