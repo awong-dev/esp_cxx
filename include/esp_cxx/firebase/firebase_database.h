@@ -4,8 +4,9 @@
 #include <functional>
 #include <string>
 
-#include "esp_cxx/httpd/websocket.h"
+#include "esp_cxx/backoff.h"
 #include "esp_cxx/cpointer.h"
+#include "esp_cxx/httpd/websocket.h"
 
 #include "gtest/gtest_prod.h"
 
@@ -137,6 +138,7 @@ class FirebaseDatabase {
   size_t request_num_ = 0;
   unique_cJSON_ptr update_template_;
   std::string firebase_id_token_url_;
+  BackoffCalculator<500> backoff_;
 
   // actual data.
   unique_cJSON_ptr root_;

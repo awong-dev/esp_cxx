@@ -58,7 +58,7 @@ void FirebaseDatabase::Connect() {
   connect_state_ = 0;  // Clear all bits, including reconnecting.
   if (!(websocket_.Connect())) {
     ESP_LOGE(kEspCxxTag, "Websocket connect failure");
-    Reconnect();  // TODO(awong): Implement backoff and jitter.
+    Reconnect();
   }
 }
 
@@ -239,6 +239,7 @@ void FirebaseDatabase::OnControlCommand(cJSON* command) {
         session_id_ = session_id->valuestring;
       }
       connect_state_ |= kConnectedBit;
+      backoff_.Reset();
       ESP_LOGI(kEspCxxTag, "Database Connected.");
       SendPostConnectCommands();
     } else if (strcmp(type->valuestring, "r") == 0) {
@@ -465,10 +466,8 @@ void FirebaseDatabase::Reconnect() {
 
   Disconnect();
 
-  // Reconnect in 5 seconds to avoid hammering in a tight loop.
-  // TODO(awong): Exponential backoff.
   connect_state_ = kReconnectingBit;
-  event_manager_->RunDelayed([this] { Connect(); }, 5000);
+  event_manager_->RunDelayed([this] { Connect(); }, backoff_.MsToNextTry());
 }
 
 }  // namespace esp_cxx
