@@ -200,10 +200,6 @@ void Wifi::OnWifiEvent(esp_event_base_t event_base, int32_t event_id,
 }
 
 void Wifi::WifiConnect(const wifi_config_t& wifi_config, bool is_station) {
-  tcpip_adapter_init();
-
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
-
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
