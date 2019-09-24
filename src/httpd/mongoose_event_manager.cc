@@ -41,7 +41,8 @@ class HttpRequestAdaptor {
 
 }  // namespace
 
-MongooseEventManager::MongooseEventManager() {
+MongooseEventManager::MongooseEventManager()
+  : signaling_task_(&MongooseEventManager::SignalTask, this, "signal", 8192) {
   mg_mgr_init(&underlying_manager_, this);
 }
 
@@ -63,7 +64,23 @@ void MongooseEventManager::Poll(int timeout_ms) {
 }
 
 void MongooseEventManager::Wake() {
-  mg_broadcast(underlying_manager(), &DoNothing, nullptr, 0);
+  // Warning: This function must be FAST. Otherwise, signaling from things
+  // wifi-handlers may trigger a watchdog timer to expire. This means no
+  // logging, no attemps to write to sockets, etc.
+  if (!executing_task_.is_current()) {
+    signaling_task_.Notify();
+  }
+}
+
+// static
+void MongooseEventManager::SignalTask(void* param) {
+ static char dummy;
+  MongooseEventManager* self = reinterpret_cast<MongooseEventManager*>(param);
+  TaskRef current_task = TaskRef::CreateForCurrent();
+  while (1) {
+    current_task.Wait();
+    mg_broadcast(self->underlying_manager(), &DoNothing, &dummy, sizeof(dummy));
+  }
 }
 
 }  // namespace esp_cxx

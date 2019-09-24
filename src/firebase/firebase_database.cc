@@ -461,13 +461,16 @@ void FirebaseDatabase::HandleAuth(HttpRequest request, int generation) {
 void FirebaseDatabase::Reconnect() {
   if (connect_state_ & kReconnectingBit) {
     // Don't reconnect while reconnecting.
+    ESP_LOGI(kEspCxxTag, "Skipping reconnect");
     return;
   }
 
   Disconnect();
 
   connect_state_ = kReconnectingBit;
-  event_manager_->RunDelayed([this] { Connect(); }, backoff_.MsToNextTry());
+  int next_reconnect = backoff_.MsToNextTry();
+  ESP_LOGI(kEspCxxTag, "Reconnecting WS in %d", next_reconnect);
+  event_manager_->RunDelayed([this] { Connect(); }, next_reconnect);
 }
 
 }  // namespace esp_cxx

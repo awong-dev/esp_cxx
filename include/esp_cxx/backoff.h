@@ -12,19 +12,21 @@ class BackoffCalculator {
  public:
   // TODO(awong): static_assert that there's not overflow in bounds.
   int MsToNextTry() {
+    int backoff_ms = kBaseMs * (1 << backoff_attempt_);
 
-    if (backoff_ms_ < kMaxBackoffMs) {
-      backoff_ms_ *= backoff_ms_;
-      backoff_ms_ = std::min(backoff_ms_, kMaxBackoffMs);
+    if (backoff_ms >= kMaxBackoffMs) {
+      backoff_ms = kMaxBackoffMs;
+    } else {
+      backoff_attempt_++;
     }
 
-    return backoff_ms_ + jitter_dist_(e_);
+    return backoff_ms + jitter_dist_(e_);
   }
 
-  void Reset() { backoff_ms_ = 0; }
+  void Reset() { backoff_attempt_ = 0; }
 
  private:
-  int backoff_ms_ = 0;
+  int backoff_attempt_ = 0;
   std::random_device rd_;
   std::mt19937 e_{rd_()};
   // Per https://cloud.google.com/iot/docs/how-tos/exponential-backoff, use 1000ms of jitter.

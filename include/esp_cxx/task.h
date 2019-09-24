@@ -64,13 +64,18 @@ class TaskRef {
   // Stop the task.
   void Stop();
 
-  // Blocks current task until a notification is received.
-  static void CurrentTaskWait();
-
   // Sleeps the current thread for |delay_ms|.
   static void Delay(int delay_ms);
 
   explicit operator bool() const { return !!task_handle_; }
+
+  bool is_current() const {
+#ifndef FAKE_ESP_IDF
+    return task_handle_ == xTaskGetCurrentTaskHandle();
+#else
+    return task_handle_ == pthread_self();
+#endif
+  }
 
  protected:
   TaskHandle task_handle_{};

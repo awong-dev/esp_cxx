@@ -57,11 +57,13 @@ void WebsocketChannel::OnWsEvent(mg_connection *new_connection, int event, webso
     }
 
     case MG_EV_WEBSOCKET_HANDSHAKE_DONE:
+      ESP_LOGI(kEspCxxTag, "WS handshake done.");
       // TODO(awong): Does there need to be a timeout on WS handshake failure?
       // Otherwise do nothing.
       break;
 
     case MG_EV_WEBSOCKET_FRAME:
+      ESP_LOGI(kEspCxxTag, "WS frame.");
       // Mongoose already handles merging fragmented messages. Thus a received
       // frame in mongoose IS a complete message. Pass it straight along.
       on_frame_cb_(WebsocketFrame(static_cast<websocket_message*>(ev_data)));

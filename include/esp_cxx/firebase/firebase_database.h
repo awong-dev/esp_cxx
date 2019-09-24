@@ -50,10 +50,10 @@ class FirebaseDatabase {
   FRIEND_TEST(Firebase, OverwriteUpdate);
 
   enum ConnectState {
-    kConnectedBit = 0x1,
-    kAuthBit = 0x2,
-    kListenBit = 0x4,
-    kReconnectingBit = 0x4,
+    kConnectedBit    = 0x1,
+    kAuthBit         = 0x2,
+    kListenBit       = 0x4,
+    kReconnectingBit = 0x8,
   };
 
   bool is_connected() const { return connect_state_ & kConnectedBit; }

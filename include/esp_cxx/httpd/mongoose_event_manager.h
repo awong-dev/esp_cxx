@@ -5,6 +5,7 @@
 #include <functional>
 
 #include "esp_cxx/event_manager.h"
+#include "esp_cxx/task.h"
 #include "mongoose.h"
 
 namespace esp_cxx {
@@ -28,7 +29,16 @@ class MongooseEventManager : public EventManager {
   void Poll(int timeout_ms) override;
   void Wake() override;
 
+  // See |signaling_task_| below.
+  static void SignalTask(void* param);
+
   mg_mgr underlying_manager_;
+  TaskRef executing_task_ = TaskRef::CreateForCurrent();
+
+  // Calling mg_broadcast() from Wake() in various contexts such as wifi
+  // events can deadlock the LWIP stack. Use a separate thread to bounce
+  // the wake message off of in order to avoid the deadlock.
+  Task signaling_task_;
 };
 
 }  // namespace esp_cxx
