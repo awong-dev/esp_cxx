@@ -91,7 +91,7 @@ void FirebaseDatabase::Publish(const std::string& path,
 
   ReplacePath(path.c_str(), std::move(new_value));
 
-  Send(cJSON_PrintUnformatted(command.get()));
+  Send(PrintJson(command.get()).get());
   // TODO(awong): If disconnected then we should mark dirty and handle
   // update merging.
 }
@@ -176,7 +176,7 @@ void FirebaseDatabase::OnWsFrame(WebsocketFrame frame) {
 
     case WebsocketOpcode::kText: {
       unique_cJSON_ptr json(cJSON_Parse(frame.data().data()));
-      ESP_LOGI(kEspCxxTag, "Recv: %s", cJSON_PrintUnformatted(json.get()));
+      ESP_LOGI(kEspCxxTag, "Recv: %s", PrintJson(json.get()).get());
       OnCommand(json.get());
       if (on_update_) {
         on_update_();
@@ -262,7 +262,7 @@ void FirebaseDatabase::OnDataCommand(cJSON* command) {
     //   {"t":"d","d":{"r":3,"b":{"s":"permission_denied","d":"Permission denied"}}}
     //
     // Since sends are infrequent, just log all responses.
-    ESP_LOGI(kEspCxxTag, "%s", cJSON_PrintUnformatted(command));
+    ESP_LOGI(kEspCxxTag, "%s", PrintJson(command).get());
     if (cJSON_IsNumber(request_id)) {
       cJSON* status = cJSON_GetObjectItemCaseSensitive(body, "s");
       if (cJSON_IsString(status) && strncmp("ok", status->valuestring, 2) == 0) {
@@ -384,7 +384,7 @@ void FirebaseDatabase::SendListenIfNeeded() {
 
   listen_request_num_ = WrapDataCommand("q", &command);
 
-  Send(cJSON_PrintUnformatted(command.get()));
+  Send(PrintJson(command.get()).get());
 }
 
 void FirebaseDatabase::SendVersion() {
@@ -395,7 +395,7 @@ void FirebaseDatabase::SendVersion() {
   cJSON_AddNumberToObject(client_info, "espcxx", 1);
   WrapDataCommand("s", &command);
 
-  Send(cJSON_PrintUnformatted(command.get()));
+  Send(PrintJson(command.get()).get());
 }
 
 int FirebaseDatabase::WrapDataCommand(const char* action,
@@ -447,7 +447,7 @@ void FirebaseDatabase::HandleAuth(HttpRequest request, int generation) {
   auth_request_num_ = WrapDataCommand("auth", &command);
 
   // Send authentication request.
-  Send(cJSON_PrintUnformatted(command.get()));
+  Send(PrintJson(command.get()).get());
 
   // Send listen command if necessary. On subsequent auths, this is likely
   // a no-op.

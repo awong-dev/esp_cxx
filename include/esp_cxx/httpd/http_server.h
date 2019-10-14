@@ -15,7 +15,7 @@ class MongooseEventManager;
 
 class HttpServer {
  public:
-  HttpServer(MongooseEventManager* event_manager, const char* port,
+  HttpServer(MongooseEventManager* event_manager,
              std::string_view resp404_html = {});
   ~HttpServer();
 
@@ -52,6 +52,9 @@ class HttpServer {
                                  void *ev_data, void *user_data);
   };
 
+  // Binds the port and starts listening.
+  void Listen(const char* port);
+
   // Enables WebSocket events.
   void EnableWebsockets();
 
@@ -87,10 +90,10 @@ class HttpServer {
   std::string_view resp404_html_;
 
   // Event manager for all connections on this HTTP server.
-  MongooseEventManager* event_manager_;
+  MongooseEventManager* event_manager_ = nullptr;
 
   // Bound connection to |port_|.
-  mg_connection* connection_;
+  mg_connection* connection_ = nullptr;
 
   // Handle of event pump task.
   Task pump_task_;

@@ -76,11 +76,13 @@ void HttpServer::Endpoint::OnHttpEventThunk(mg_connection *new_connection, int e
 }
 
 HttpServer::HttpServer(MongooseEventManager* event_manager,
-                       const char* port,
                        std::string_view resp404_html)
   : resp404_html_(resp404_html),
     event_manager_(event_manager) {
-  connection_ = mg_bind(event_manager->underlying_manager(), port, &DefaultHandlerThunk, this);
+}
+
+void HttpServer::Listen(const char* port) {
+  connection_ = mg_bind(event_manager_->underlying_manager(), port, &DefaultHandlerThunk, this);
 }
 
 HttpServer::~HttpServer() = default;

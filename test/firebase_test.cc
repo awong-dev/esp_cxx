@@ -126,7 +126,7 @@ TEST_F(Firebase, MergeUpdate) {
   ASSERT_TRUE(cJSON_IsObject(item));
 
   // This merge erases one top level field.
-  EXPECT_EQ(4, cJSON_GetArraySize(item)) << cJSON_Print(item);
+  EXPECT_EQ(4, cJSON_GetArraySize(item)) << PrintJson(item);
   EXPECT_FALSE(database_.Get("/test/array"));
 
   // Check the new value actaully propagated.

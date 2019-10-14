@@ -1,8 +1,14 @@
 #ifndef ESPCXX_LOGGING_H_
 #define ESPCXX_LOGGING_H_
 
+#include "esp_cxx/cpointer.h"
+
 namespace esp_cxx {
 constexpr char kEspCxxTag[] = "espcxx";
+
+static inline unique_C_ptr<char> PrintJson(cJSON* data) {
+  return unique_C_ptr<char>(cJSON_PrintUnformatted(data));
+}
 }  // namespace espcxx
 
 #ifndef FAKE_ESP_IDF
