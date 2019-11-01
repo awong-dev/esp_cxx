@@ -454,7 +454,7 @@ void FirebaseDatabase::HandleAuth(HttpRequest request, int generation) {
   SendListenIfNeeded();
 
   // Schedule the next authentication refresh at 2 mins before expiration.
-  event_manager_->RunDelayed([&, generation] {SendAuthentication(generation);},
+  event_manager_->RunDelayed([this, generation] {SendAuthentication(generation);},
                              (expires_in->valueint - 120) * 1000);
 }
 

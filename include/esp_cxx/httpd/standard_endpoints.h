@@ -1,6 +1,7 @@
 #ifndef ESPCXX_HTTPD_STANDARD_ENDPOINTS_H_
 #define ESPCXX_HTTPD_STANDARD_ENDPOINTS_H_
 
+#include "esp_cxx/httpd/config_endpoint.h"
 #include "esp_cxx/httpd/ota_endpoint.h"
 #include "esp_cxx/httpd/log_stream_endpoint.h"
 
@@ -44,6 +45,7 @@ class StandardEndpoints {
   static void LedOffEndpoint(HttpRequest request, HttpResponse response);
 
  private:
+  ConfigEndpoint config_endpoint_;
   OtaEndpoint ota_endpoint_;
   LogStreamEndpoint log_stream_endpoint_;
   HtmlEndpoint index_endpoint_;

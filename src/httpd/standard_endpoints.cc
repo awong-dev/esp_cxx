@@ -131,6 +131,7 @@ void StandardEndpoints::RegisterEndpoints(HttpServer* server) {
   server->RegisterEndpoint<&LedOffEndpoint>("/api/led/off$");
 
   server->RegisterEndpoint("/api/ota$", ota_endpoint());
+  server->RegisterEndpoint("/api/config$", &config_endpoint_);
 
   server->EnableWebsockets();
   server->RegisterEndpoint("/api/logz$", log_stream_endpoint());
