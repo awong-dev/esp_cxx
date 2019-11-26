@@ -23,35 +23,41 @@ struct RemoveEmptyState {
 
 namespace esp_cxx {
 
-FirebaseDatabase::FirebaseDatabase(
-    const std::string& host,
-    const std::string& database,
-    const std::string& listen_path,
-    MongooseEventManager* event_manager,
-    const std::string& auth_token_url,
-    const std::string& device_id,
-    const std::string& password)
-  : host_(host),
-    database_(database),
-    listen_path_(listen_path),
-    event_manager_(event_manager),
-    websocket_(event_manager_,
-               "wss://" + host_ + "/.ws?v=5&ns=" + database_,
-               [this](WebsocketFrame frame) { OnWsFrame(std::move(frame)); },
-               [this] {
-                 // Send reconnect on a different event frame to avoid reentrancy.
-                 event_manager_->Run([this]{
-                                     Reconnect();
-                                     });
-               }),
+FirebaseDatabase::FirebaseDatabase(MongooseEventManager* event_manager)
+  : event_manager_(event_manager),
     update_template_(cJSON_CreateObject()),
-    firebase_id_token_url_(
-        auth_token_url.empty() ? std::string() : 
-        auth_token_url + "?device_id=" + device_id + "&password=" + password),
     root_(cJSON_CreateObject()) {
 }
 
 FirebaseDatabase::~FirebaseDatabase() {
+}
+
+void FirebaseDatabase::SetConnectInfo(std::string host,
+                                      std::string database,
+                                      std::string listen_path) {
+  host_ = std::move(host);
+  database_ = std::move(database);
+  listen_path_ = std::move(listen_path);
+  websocket_ = WebsocketChannel(event_manager_,
+                         "wss://" + host_ + "/.ws?v=5&ns=" + database_,
+                         [this](WebsocketFrame frame) { OnWsFrame(std::move(frame)); },
+                         [this] {
+                           // Send reconnect on a different event frame to avoid reentrancy.
+                           event_manager_->Run([this]{
+                                               Reconnect();
+                                               });
+                         });
+}
+
+void FirebaseDatabase::SetAuthInfo(const std::string& auth_token_url,
+                                   const std::string& device_id,
+                                   const std::string& password) {
+  if (auth_token_url.empty()) {
+    firebase_id_token_url_.clear();
+  } else {
+    firebase_id_token_url_ =
+      auth_token_url + "?device_id=" + device_id + "&password=" + password;
+  }
 }
 
 void FirebaseDatabase::Connect() {

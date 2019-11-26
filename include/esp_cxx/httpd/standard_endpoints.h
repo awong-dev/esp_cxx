@@ -34,6 +34,7 @@ class StandardEndpoints {
 
   void RegisterEndpoints(HttpServer* server);
 
+  ConfigEndpoint* config_endpoint() { return &config_endpoint_; }
   OtaEndpoint* ota_endpoint() { return &ota_endpoint_; }
   LogStreamEndpoint* log_stream_endpoint() { return &log_stream_endpoint_; }
   HtmlEndpoint* index_endpoint() { return &index_endpoint_; }

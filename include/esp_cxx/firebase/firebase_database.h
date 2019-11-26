@@ -18,16 +18,16 @@ class HttpRequest;
 
 class FirebaseDatabase {
  public:
-  //  wss://anger2action-f3698.firebaseio.com/.ws?v=5&ns=anger2action-f3698
-  FirebaseDatabase(
-      const std::string& host,
-      const std::string& database,
-      const std::string& listen_path,
-      MongooseEventManager* event_manager,
-      const std::string& auth_token_url,
-      const std::string& device_id,
-      const std::string& password);
+  explicit FirebaseDatabase(MongooseEventManager* event_manager);
   ~FirebaseDatabase();
+
+  //  wss://anger2action-f3698.firebaseio.com/.ws?v=5&ns=anger2action-f3698
+  void SetConnectInfo(std::string host, std::string database,
+                      std::string listen_path);
+
+  void SetAuthInfo(const std::string& auth_token_url,
+                   const std::string& device_id,
+                   const std::string& password);
 
   // Connects to the DB and processes updates.
   void Connect();

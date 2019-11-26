@@ -4,6 +4,8 @@
 
 namespace esp_cxx {
 
+const char ConfigEndpoint::kNvsNamespace[] = "config";
+
 void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
   if (request.method() != HttpMethod::kGet &&
       request.method() != HttpMethod::kPost) {
@@ -11,23 +13,37 @@ void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
     return;
   }
   unique_cJSON_ptr json(cJSON_Parse(request.body().data()));
-  unique_cJSON_ptr key(
-      cJSON_DetachItemFromObjectCaseSensitive(json.get(), "_key"));
-  if (!cJSON_IsString(key.get())) {
-    response.SendError(400, "Missing _key");
+  if (!cJSON_IsArray(json.get())) {
+    response.SendError(400, "Expecting array of config values");
     return;
   }
 
-  if (request.method() == HttpMethod::kPost) {
-    auto value = PrintJson(json.get());
-    nvs_handle_.SetString(key->valuestring, value.get());
-    response.Send(200, strlen(value.get()), nullptr, value.get());
-    return;
+  std::string result = "[";
+  cJSON *entry;
+  cJSON_ArrayForEach(entry, json.get()) {
+    cJSON* key = cJSON_GetObjectItemCaseSensitive(entry, "k");
+    cJSON* data = cJSON_GetObjectItemCaseSensitive(entry, "d");
+    if (cJSON_IsString(key)) {
+      result += "{\"k\":";
+      result += key->valuestring;
+      result += ",\"d\":";
+      if (request.method() == HttpMethod::kPost) {
+        esp_cxx::unique_C_ptr<char> data_str = PrintJson(data);
+        nvs_handle_.SetString(key->valuestring, data_str.get());
+        result += data_str.get();
+      } else {
+        result += nvs_handle_.GetString(key->valuestring).value_or(std::string("\"\""));
+      }
+      result += "},";
+    }
   }
 
-  // Default treat things like a GET.
-  std::string value = nvs_handle_.GetString(key->valuestring).value_or(std::string());
-  response.Send(200, value.size(), nullptr, value);
+  if (result.back() == ',') {
+    result.pop_back();
+  }
+  result += "]";
+
+  response.Send(200, result.size(), nullptr, result);
 }
 
 }  // namespace esp_cxx

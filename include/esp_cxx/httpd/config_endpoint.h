@@ -10,9 +10,10 @@ namespace esp_cxx {
 class ConfigEndpoint : public HttpServer::Endpoint {
  public:
   virtual void OnHttp(HttpRequest request, HttpResponse response);
+  static const char kNvsNamespace[];
 
  private:
-  NvsHandle nvs_handle_{"config", NvsHandle::Mode::kReadWrite };
+  NvsHandle nvs_handle_{kNvsNamespace, NvsHandle::Mode::kReadWrite};
 };
 
 }  // namespace esp_cxx
