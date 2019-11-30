@@ -13,36 +13,59 @@ void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
     return;
   }
   unique_cJSON_ptr json(cJSON_Parse(request.body().data()));
+  ESP_LOGI(kEspCxxTag, "Got %.*s\n", request.body().size(), request.body().data());
   if (!cJSON_IsArray(json.get())) {
-    response.SendError(400, "Expecting array of config values");
+    response.SendError(400, "Expecting array of config values\0");
     return;
   }
 
-  std::string result = "[";
+  std::string result = "{";
   cJSON *entry;
   cJSON_ArrayForEach(entry, json.get()) {
+    // NvsFlash can only handle 15 bytes including null.
+    if (cJSON_IsString(entry) && strlen(entry->string) < 15) {
+      result += "{\"";
+      result += entry->string;
+      result + "\":\"";
+      if (request.method() == HttpMethod::kPost) {
+        nvs_handle_.SetString(entry->string, entry->valuestring);
+        result += entry->valuestring;
+      } else {
+        result += nvs_handle_.GetString(entry->string).value_or(std::string("\"\""));
+      }
+      result += "\"},";
+    }
+    
+    /*
+     */
     cJSON* key = cJSON_GetObjectItemCaseSensitive(entry, "k");
     cJSON* data = cJSON_GetObjectItemCaseSensitive(entry, "d");
-    if (cJSON_IsString(key)) {
-      result += "{\"k\":";
+    if (cJSON_IsString(key) && strlen(key->valuestring) < 15) {
+      result += "{\"k\":\"";
       result += key->valuestring;
-      result += ",\"d\":";
+      result += "\",\"d\":\"";
       if (request.method() == HttpMethod::kPost) {
-        esp_cxx::unique_C_ptr<char> data_str = PrintJson(data);
-        nvs_handle_.SetString(key->valuestring, data_str.get());
-        result += data_str.get();
+        if (cJSON_IsString(data)) {
+          nvs_handle_.SetString(key->valuestring, data->valuestring);
+          result += data->valuestring;
+        } else {
+          esp_cxx::unique_C_ptr<char> data_str = PrintJson(data);
+          nvs_handle_.SetString(key->valuestring, data_str.get());
+          result += data_str.get();
+        }
       } else {
         result += nvs_handle_.GetString(key->valuestring).value_or(std::string("\"\""));
       }
-      result += "},";
+      result += "\"},";
     }
   }
 
   if (result.back() == ',') {
     result.pop_back();
   }
-  result += "]";
+  result += "}";
 
+  // TODO(awong): Set the content type.
   response.Send(200, result.size(), nullptr, result);
 }
 

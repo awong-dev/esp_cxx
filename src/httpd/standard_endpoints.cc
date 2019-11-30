@@ -138,7 +138,8 @@ void StandardEndpoints::RegisterEndpoints(HttpServer* server) {
 }
 
 void StandardEndpoints::ResetEndpoint(HttpRequest request, HttpResponse response) {
-  if (request.method() == HttpMethod::kGet) {
+  if (request.method() == HttpMethod::kGet ||
+      request.method() == HttpMethod::kPost) {
 #ifndef FAKE_ESP_IDF
     esp_restart();
 #endif

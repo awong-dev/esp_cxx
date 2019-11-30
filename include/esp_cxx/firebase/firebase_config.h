@@ -26,8 +26,8 @@ class FirebaseConfig {
   const std::string& device_id() const { return device_id_; }
   void set_device_id(const std::string& device_id) { device_id_ = device_id; }
 
-  const std::string& password() const { return password_; }
-  void set_password(const std::string& password) { password_ = password; }
+  const std::string& secret() const { return secret_; }
+  void set_secret(const std::string& secret) { secret_ = secret; }
 
  private:
   std::string host_;
@@ -36,7 +36,7 @@ class FirebaseConfig {
 
   std::string auth_token_url_;
   std::string device_id_;
-  std::string password_;
+  std::string secret_;
 };
 
 }  // namespace esp_cxx
