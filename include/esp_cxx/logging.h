@@ -2,6 +2,9 @@
 #define ESPCXX_LOGGING_H_
 
 #include "esp_cxx/cpointer.h"
+#include "esp_cxx/cxx17hack.h"
+
+#include <functional>
 
 namespace esp_cxx {
 constexpr char kEspCxxTag[] = "espcxx";
@@ -9,6 +12,9 @@ constexpr char kEspCxxTag[] = "espcxx";
 static inline unique_C_ptr<char> PrintJson(cJSON* data) {
   return unique_C_ptr<char>(cJSON_PrintUnformatted(data));
 }
+
+void SetLogFilter(std::function<void(std::string_view)> on_log);
+
 }  // namespace espcxx
 
 #ifndef FAKE_ESP_IDF

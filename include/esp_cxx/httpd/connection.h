@@ -1,5 +1,5 @@
-#ifndef ESPCXX_HTTPD_UDP_SOCKET_H_
-#define ESPCXX_HTTPD_UDP_SOCKET_H_
+#ifndef ESPCXX_HTTPD_CONNECTION_H_
+#define ESPCXX_HTTPD_CONNECTION_H_
 
 #include <functional>
 #include <string>
@@ -12,12 +12,18 @@ namespace esp_cxx {
 
 class MongooseEventManager;
 
-class UdpSocket {
+class Connection {
  public:
-  explicit UdpSocket(MongooseEventManager *event_manager,
-                     std::string_view udp_url,
+  Connection() = default;
+  explicit Connection(MongooseEventManager *event_manager,
                      std::function<void(std::string_view)> on_packet);
-  void Connect();
+  ~Connection();
+
+  // udp URL to connect to. Should be of form udp://[hostname]:{port}.
+  // Examples:
+  //   udp://1234  # port 1234 of localhost
+  //   udp://123.4.5.1:1234  # port 1234 of 123.4.5.1
+  void Connect(const std::string& udp_url);
   void Send(std::string_view data);
 
  private:
@@ -28,16 +34,10 @@ class UdpSocket {
 
   void OnEvent(struct mg_connection *nc, int event, void *event_data);
 
-  mg_connection* connection_;
+  mg_connection* connection_ = nullptr;
 
   // Event manager used to initiate connections.
-  MongooseEventManager* event_manager_;
-
-  // udp URL to connect to. Should be of form udp://[hostname]/{port}.
-  // Examples:
-  //   udp://1234  # port 1234 of localhost
-  //   udp://123.4.5.1:1234  # port 1234 of 123.4.5.1
-  std::string udp_url_;
+  MongooseEventManager* event_manager_ = nullptr;
 
   // Callback that is executed when data is received.
   std::function<void(std::string_view)> on_packet_;
@@ -45,5 +45,5 @@ class UdpSocket {
 
 }  // namespace esp_cxx
 
-#endif  // ESPCXX_HTTPD_UDP_SOCKET_H_
+#endif  // ESPCXX_HTTPD_CONNECTION_H_
 

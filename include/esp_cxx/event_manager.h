@@ -40,12 +40,21 @@ class EventManager {
   // Make Loop() above return.
   void Quit();
 
+  // Registers a task to run every time the Loop wakes. Useful for things
+  // like draining logs.
+  void SetOnWakeTask(std::function<void(void)> on_wake_task) {
+    on_wake_task_ = std::move(on_wake_task);
+  }
+
+  // Callable from any thraed. Forcably wakes up the Loop() allowing the
+  // closure registered with SetOnWakeTask() to run.
+  virtual void Wake() = 0;
+
  protected:
   EventManager() = default;
   virtual ~EventManager() = default;
 
   virtual void Poll(int timeout_ms) = 0;
-  virtual void Wake() = 0;
 
  private:
   struct ClosureEntry {
@@ -64,6 +73,7 @@ class EventManager {
 
   Mutex lock_;
   ClosureList closures_;
+  std::function<void(void)> on_wake_task_;
   int num_entries_ = 0;
   int head_ = 0;
   bool has_quit_ = false;
@@ -85,9 +95,10 @@ class QueueSetEventManager : public EventManager {
 
   QueueSet* underlying_queue_set() { return &underlying_queue_set_; }
 
+  void Wake() override;
+
  protected:
   void Poll(int timeout_ms) override;
-  void Wake() override;
 
  private:
   // TODO(awong): Using an unordered_map here is overkill. Unsorted array

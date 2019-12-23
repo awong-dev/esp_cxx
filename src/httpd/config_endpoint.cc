@@ -12,6 +12,8 @@ void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
     response.SendError(400, "Invalid Method");
     return;
   }
+  // TODO(awong): Get the config_prefix from a value.
+
   unique_cJSON_ptr json(cJSON_Parse(request.body().data()));
   ESP_LOGI(kEspCxxTag, "Got %.*s\n", request.body().size(), request.body().data());
   if (!cJSON_IsArray(json.get())) {

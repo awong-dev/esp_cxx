@@ -25,9 +25,10 @@ class MongooseEventManager : public EventManager {
 
   mg_mgr* underlying_manager() { return &underlying_manager_; }
 
+  void Wake() override;
+
  private:
   void Poll(int timeout_ms) override;
-  void Wake() override;
 
   // See |signaling_task_| below.
   static void SignalTask(void* param);

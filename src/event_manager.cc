@@ -33,6 +33,10 @@ void EventManager::Loop() {
    TimePoint next_wake = TimePoint::max();
 
   while (!has_quit_) {
+    if (on_wake_task_) {
+      on_wake_task_();
+    }
+
     // Run the closures.
     ClosureList to_run;
     int num_to_run = 0;

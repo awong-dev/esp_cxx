@@ -66,7 +66,7 @@ void MongooseEventManager::Poll(int timeout_ms) {
 void MongooseEventManager::Wake() {
   // Warning: This function must be FAST. Otherwise, signaling from things
   // wifi-handlers may trigger a watchdog timer to expire. This means no
-  // logging, no attemps to write to sockets, etc.
+  // logging, no attempts to write to sockets, etc.
   if (!executing_task_.is_current()) {
     signaling_task_.Notify();
   }

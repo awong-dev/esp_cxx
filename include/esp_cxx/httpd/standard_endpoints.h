@@ -40,6 +40,7 @@ class StandardEndpoints {
   HtmlEndpoint* index_endpoint() { return &index_endpoint_; }
 
   // Stateless endpoints.
+  static void StatsEndpoint(HttpRequest request, HttpResponse response);
   static void ResetEndpoint(HttpRequest request, HttpResponse response);
   static void WifiConfigEndpoint(HttpRequest request, HttpResponse response);
   static void LedOnEndpoint(HttpRequest request, HttpResponse response);

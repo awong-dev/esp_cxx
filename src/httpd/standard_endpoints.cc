@@ -127,6 +127,7 @@ void StandardEndpoints::RegisterEndpoints(HttpServer* server) {
   server->RegisterEndpoint("/$", index_endpoint());
   server->RegisterEndpoint<&WifiConfigEndpoint>("/api/wificonfig$");
   server->RegisterEndpoint<&ResetEndpoint>("/api/reset$");
+  server->RegisterEndpoint<&StatsEndpoint>("/api/stats$");
   server->RegisterEndpoint<&LedOnEndpoint>("/api/led/on$");
   server->RegisterEndpoint<&LedOffEndpoint>("/api/led/off$");
 
@@ -143,6 +144,15 @@ void StandardEndpoints::ResetEndpoint(HttpRequest request, HttpResponse response
 #ifndef FAKE_ESP_IDF
     esp_restart();
 #endif
+  }
+}
+
+void StandardEndpoints::StatsEndpoint(HttpRequest request, HttpResponse response) {
+  if (request.method() == HttpMethod::kGet) {
+    // TODO(awong): Actually print uptime and memory.
+    std::string result = "{";
+    result += "}";
+    response.Send(200, result.size(), nullptr, result);
   }
 }
 
