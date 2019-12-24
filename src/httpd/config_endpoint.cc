@@ -4,8 +4,6 @@
 
 namespace esp_cxx {
 
-const char ConfigEndpoint::kNvsNamespace[] = "config";
-
 void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
   if (request.method() != HttpMethod::kGet &&
       request.method() != HttpMethod::kPost) {
@@ -30,10 +28,10 @@ void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
       result += entry->string;
       result + "\":\"";
       if (request.method() == HttpMethod::kPost) {
-        nvs_handle_.SetString(entry->string, entry->valuestring);
+        config_store_.SetValue("", entry->string, entry->valuestring);
         result += entry->valuestring;
       } else {
-        result += nvs_handle_.GetString(entry->string).value_or(std::string("\"\""));
+        result += config_store_.GetValue("", entry->string).value_or(std::string("\"\""));
       }
       result += "\"},";
     }
@@ -48,15 +46,15 @@ void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
       result += "\",\"d\":\"";
       if (request.method() == HttpMethod::kPost) {
         if (cJSON_IsString(data)) {
-          nvs_handle_.SetString(key->valuestring, data->valuestring);
+          config_store_.SetValue("", key->valuestring, data->valuestring);
           result += data->valuestring;
         } else {
           esp_cxx::unique_C_ptr<char> data_str = PrintJson(data);
-          nvs_handle_.SetString(key->valuestring, data_str.get());
+          config_store_.SetValue("", key->valuestring, data_str.get());
           result += data_str.get();
         }
       } else {
-        result += nvs_handle_.GetString(key->valuestring).value_or(std::string("\"\""));
+        result += config_store_.GetValue("", key->valuestring).value_or(std::string("\"\""));
       }
       result += "\"},";
     }

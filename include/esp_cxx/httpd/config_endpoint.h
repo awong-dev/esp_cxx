@@ -3,17 +3,16 @@
 
 #include "esp_cxx/httpd/http_server.h"
 
-#include "esp_cxx/nvs_handle.h"
+#include "esp_cxx/config_store.h"
 
 namespace esp_cxx {
 
 class ConfigEndpoint : public HttpServer::Endpoint {
  public:
   virtual void OnHttp(HttpRequest request, HttpResponse response);
-  static const char kNvsNamespace[];
 
  private:
-  NvsHandle nvs_handle_{kNvsNamespace, NvsHandle::Mode::kReadWrite};
+  ConfigStore config_store_;
 };
 
 }  // namespace esp_cxx
