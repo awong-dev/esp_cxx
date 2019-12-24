@@ -10,28 +10,40 @@ void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
     response.SendError(400, "Invalid Method");
     return;
   }
-  // TODO(awong): Get the config_prefix from a value.
+  unique_cJSON_ptr body(cJSON_Parse(request.body().data()));
+  unique_cJSON_ptr prefix(cJSON_DetachItemFromObjectCaseSensitive(
+          body.get(), "prefix"));
+  if (!prefix || !cJSON_IsString(prefix.get())) {
+    response.SendError(400, "Need prefix string");
+    return;
+  }
 
-  unique_cJSON_ptr json(cJSON_Parse(request.body().data()));
+  unique_cJSON_ptr data(cJSON_DetachItemFromObjectCaseSensitive(
+          body.get(), "data"));
+  if (!data) {
+    response.SendError(400, "Missing data");
+    return;
+  }
+
   ESP_LOGI(kEspCxxTag, "Got %.*s\n", request.body().size(), request.body().data());
-  if (!cJSON_IsArray(json.get())) {
+  if (!cJSON_IsArray(data.get())) {
     response.SendError(400, "Expecting array of config values\0");
     return;
   }
 
   std::string result = "{";
   cJSON *entry;
-  cJSON_ArrayForEach(entry, json.get()) {
+  cJSON_ArrayForEach(entry, data.get()) {
     // NvsFlash can only handle 15 bytes including null.
     if (cJSON_IsString(entry) && strlen(entry->string) < 15) {
       result += "{\"";
       result += entry->string;
       result + "\":\"";
       if (request.method() == HttpMethod::kPost) {
-        config_store_.SetValue("", entry->string, entry->valuestring);
+        config_store_.SetValue(prefix->valuestring, entry->string, entry->valuestring);
         result += entry->valuestring;
       } else {
-        result += config_store_.GetValue("", entry->string).value_or(std::string("\"\""));
+        result += config_store_.GetValue(prefix->valuestring, entry->string).value_or(std::string("\"\""));
       }
       result += "\"},";
     }
@@ -46,15 +58,15 @@ void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
       result += "\",\"d\":\"";
       if (request.method() == HttpMethod::kPost) {
         if (cJSON_IsString(data)) {
-          config_store_.SetValue("", key->valuestring, data->valuestring);
+          config_store_.SetValue(prefix->valuestring, key->valuestring, data->valuestring);
           result += data->valuestring;
         } else {
           esp_cxx::unique_C_ptr<char> data_str = PrintJson(data);
-          config_store_.SetValue("", key->valuestring, data_str.get());
+          config_store_.SetValue(prefix->valuestring, key->valuestring, data_str.get());
           result += data_str.get();
         }
       } else {
-        result += config_store_.GetValue("", key->valuestring).value_or(std::string("\"\""));
+        result += config_store_.GetValue(prefix->valuestring, key->valuestring).value_or(std::string("\"\""));
       }
       result += "\"},";
     }

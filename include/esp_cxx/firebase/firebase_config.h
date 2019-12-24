@@ -2,14 +2,14 @@
 #define ESPCXX_FIREBASE_FIREBASE_CONFIG_H_
 
 #include <string>
-#include "esp_cxx/nvs_handle.h"
+#include "esp_cxx/config_store.h"
 
 namespace esp_cxx {
 
 class FirebaseConfig {
  public:
-  void Load();
-  void Save();
+  void Load(ConfigStore* store);
+  void Save(ConfigStore* store);
 
   const std::string& host() const { return host_; }
   void set_host(const std::string& host) { host_ = host; }
