@@ -5,11 +5,23 @@
 namespace esp_cxx {
 
 void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
-  if (request.method() != HttpMethod::kGet &&
-      request.method() != HttpMethod::kPost) {
+  if (request.method() == HttpMethod::kGet) {
+    OnGet(request, response);
+  } else if (request.method() == HttpMethod::kPost) {
+    OnPost(request, response);
+  } else {
     response.SendError(400, "Invalid Method");
-    return;
   }
+}
+
+void ConfigEndpoint::OnGet(HttpRequest request, HttpResponse response) {
+  auto result_str = PrintJson(config_store_.GetAllValues().get());
+  response.Send(200, strlen(result_str.get()), HttpResponse::kContentTypeJson,
+                result_str.get());
+}
+
+void ConfigEndpoint::OnPost(HttpRequest request, HttpResponse response) {
+  ESP_LOGI(kEspCxxTag, "Config got %.*s\n", request.body().size(), request.body().data());
   unique_cJSON_ptr body(cJSON_Parse(request.body().data()));
   unique_cJSON_ptr prefix(cJSON_DetachItemFromObjectCaseSensitive(
           body.get(), "prefix"));
@@ -18,67 +30,40 @@ void ConfigEndpoint::OnHttp(HttpRequest request, HttpResponse response) {
     return;
   }
 
-  unique_cJSON_ptr data(cJSON_DetachItemFromObjectCaseSensitive(
-          body.get(), "data"));
-  if (!data) {
+  ESP_LOGI(kEspCxxTag, "prefix found: %s", prefix->valuestring);
+  unique_cJSON_ptr config_data(cJSON_DetachItemFromObjectCaseSensitive(
+          body.get(), "config_data"));
+  if (!config_data) {
     response.SendError(400, "Missing data");
     return;
   }
 
-  ESP_LOGI(kEspCxxTag, "Got %.*s\n", request.body().size(), request.body().data());
-  if (!cJSON_IsArray(data.get())) {
-    response.SendError(400, "Expecting array of config values\0");
+  ESP_LOGI(kEspCxxTag, "Data found");
+  if (!cJSON_IsObject(config_data.get())) {
+    response.SendError(400, "Expecting object of values");
     return;
   }
 
-  std::string result = "{";
+  int prefix_len = strlen(prefix->valuestring) + 1;
+  unique_cJSON_ptr result(cJSON_CreateObject());
   cJSON *entry;
-  cJSON_ArrayForEach(entry, data.get()) {
+  cJSON_ArrayForEach(entry, config_data.get()) {
     // NvsFlash can only handle 15 bytes including null.
-    if (cJSON_IsString(entry) && strlen(entry->string) < 15) {
-      result += "{\"";
-      result += entry->string;
-      result + "\":\"";
-      if (request.method() == HttpMethod::kPost) {
+    if ((strlen(entry->string) + prefix_len) < 15) {
+      char full_key[15];
+      snprintf(&full_key[0], sizeof(full_key), "%s:%s", prefix->valuestring, entry->string);
+
+      if (cJSON_IsString(entry)) {
+        ESP_LOGI(kEspCxxTag, "Set %s = %s", full_key, entry->valuestring);
+        cJSON_AddStringToObject(result.get(), full_key, entry->valuestring);
         config_store_.SetValue(prefix->valuestring, entry->string, entry->valuestring);
-        result += entry->valuestring;
-      } else {
-        result += config_store_.GetValue(prefix->valuestring, entry->string).value_or(std::string("\"\""));
       }
-      result += "\"},";
-    }
-    
-    /*
-     */
-    cJSON* key = cJSON_GetObjectItemCaseSensitive(entry, "k");
-    cJSON* data = cJSON_GetObjectItemCaseSensitive(entry, "d");
-    if (cJSON_IsString(key) && strlen(key->valuestring) < 15) {
-      result += "{\"k\":\"";
-      result += key->valuestring;
-      result += "\",\"d\":\"";
-      if (request.method() == HttpMethod::kPost) {
-        if (cJSON_IsString(data)) {
-          config_store_.SetValue(prefix->valuestring, key->valuestring, data->valuestring);
-          result += data->valuestring;
-        } else {
-          esp_cxx::unique_C_ptr<char> data_str = PrintJson(data);
-          config_store_.SetValue(prefix->valuestring, key->valuestring, data_str.get());
-          result += data_str.get();
-        }
-      } else {
-        result += config_store_.GetValue(prefix->valuestring, key->valuestring).value_or(std::string("\"\""));
-      }
-      result += "\"},";
     }
   }
 
-  if (result.back() == ',') {
-    result.pop_back();
-  }
-  result += "}";
-
-  // TODO(awong): Set the content type.
-  response.Send(200, result.size(), nullptr, result);
+  auto result_str = PrintJson(result.get());
+  response.Send(200, strlen(result_str.get()), HttpResponse::kContentTypeJson,
+                result_str.get());
 }
 
 }  // namespace esp_cxx

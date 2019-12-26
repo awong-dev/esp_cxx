@@ -1,6 +1,7 @@
 #include "esp_cxx/logging.h"
 
 #include <cassert>
+#include <string>
 
 namespace esp_cxx {
 
@@ -8,6 +9,7 @@ namespace {
 
 static std::function<void(std::string_view)> g_on_log_cb;
 vprintf_like_t g_orig_vprintf;
+std::string g_device_id;
 
 int SyslogFormatFilter(const char *format, va_list args) {
   int retval = g_orig_vprintf(format, args);
@@ -21,7 +23,7 @@ int SyslogFormatFilter(const char *format, va_list args) {
   pos += strftime(&buf[pos], sizeof(buf) - pos, "<22>%FT%TZ ", ptm);
   assert(pos < sizeof(buf));
 
-  pos += snprintf(&buf[pos], sizeof(buf) - pos, "%s ledstrip ", "device_id"); // TODO(awong): Device id here.
+  pos += snprintf(&buf[pos], sizeof(buf) - pos, "%s ledstrip ", g_device_id.c_str());
   assert(pos < sizeof(buf));
 
   vsnprintf(&buf[pos], sizeof(buf) - pos, format, args);
@@ -32,8 +34,9 @@ int SyslogFormatFilter(const char *format, va_list args) {
 
 }  // namespace
 
-void SetLogFilter(std::function<void(std::string_view)> on_log) {
+void SetLogFilter(std::function<void(std::string_view)> on_log, std::string_view device_id) {
   g_on_log_cb = std::move(on_log);
+  g_device_id = device_id.empty() ? "unset" : device_id;
   if (!g_orig_vprintf) {
     g_orig_vprintf = esp_log_set_vprintf(&SyslogFormatFilter);
   }

@@ -13,7 +13,7 @@ static inline unique_C_ptr<char> PrintJson(cJSON* data) {
   return unique_C_ptr<char>(cJSON_PrintUnformatted(data));
 }
 
-void SetLogFilter(std::function<void(std::string_view)> on_log);
+void SetLogFilter(std::function<void(std::string_view)> on_log, std::string_view device_id);
 
 }  // namespace espcxx
 

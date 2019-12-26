@@ -9,9 +9,12 @@ namespace esp_cxx {
 
 class ConfigEndpoint : public HttpServer::Endpoint {
  public:
-  virtual void OnHttp(HttpRequest request, HttpResponse response);
+  void OnHttp(HttpRequest request, HttpResponse response) override;
 
  private:
+  void OnGet(HttpRequest request, HttpResponse response);
+  void OnPost(HttpRequest request, HttpResponse response);
+
   ConfigStore config_store_;
 };
 

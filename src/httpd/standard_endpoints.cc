@@ -149,10 +149,15 @@ void StandardEndpoints::ResetEndpoint(HttpRequest request, HttpResponse response
 
 void StandardEndpoints::StatsEndpoint(HttpRequest request, HttpResponse response) {
   if (request.method() == HttpMethod::kGet) {
-    // TODO(awong): Actually print uptime and memory.
-    std::string result = "{";
-    result += "}";
-    response.Send(200, result.size(), nullptr, result);
+    unique_cJSON_ptr stats(cJSON_CreateObject());
+
+    cJSON_AddNumberToObject(stats.get(), "free_heap_bytes", xPortGetFreeHeapSize());
+    cJSON_AddNumberToObject(stats.get(), "uptime_us", esp_timer_get_time());
+
+    auto result = PrintJson(stats.get());
+    response.Send(200, strlen(result.get()), HttpResponse::kContentTypeJson, result.get());
+  } else {
+    response.SendError(400);
   }
 }
 

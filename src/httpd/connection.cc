@@ -25,9 +25,10 @@ void Connection::OnEventThunk(struct mg_connection *nc, int event,
   self->OnEvent(nc, event, event_data);
 }
 
-void Connection::Connect(const std::string& udp_url) {
+bool Connection::Connect(const std::string& udp_url) {
   connection_ = mg_connect(event_manager_->underlying_manager(),
                            udp_url.c_str(), &OnEventThunk, this);
+  return !!connection_;
 }
 
 void Connection::Send(std::string_view data) {

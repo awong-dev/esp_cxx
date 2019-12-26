@@ -84,6 +84,10 @@ void FirebaseDatabase::SetUpdateHandler(std::function<void()> on_update) {
   on_update_ = on_update;
 }
 
+void FirebaseDatabase::SetAuthHandler(std::function<void(bool, cJSON*)> on_auth) {
+  on_auth_ = on_auth;
+}
+
 void FirebaseDatabase::Publish(const std::string& path,
                                unique_cJSON_ptr new_value) {
   // Example packet:
@@ -270,18 +274,22 @@ void FirebaseDatabase::OnDataCommand(cJSON* command) {
     // Since sends are infrequent, just log all responses.
     ESP_LOGI(kEspCxxTag, "%s", PrintJson(command).get());
     if (cJSON_IsNumber(request_id)) {
+      int r = request_id->valueint;
       cJSON* status = cJSON_GetObjectItemCaseSensitive(body, "s");
-      if (cJSON_IsString(status) && strncmp("ok", status->valuestring, 2) == 0) {
-        int r = request_id->valueint;
-        if (r == auth_request_num_) {
+      bool is_ok = cJSON_IsString(status) && strncmp("ok", status->valuestring, 2) == 0;
+      if (r == auth_request_num_) {
+        if (is_ok) {
           connect_state_ |= kAuthBit;
-          ESP_LOGI(kEspCxxTag, "Database Authenticated.");
-          auth_request_num_ = -1;
-        } else if (r == listen_request_num_) {
-          connect_state_ |= kListenBit;
-          ESP_LOGI(kEspCxxTag, "Database Listening.");
-          listen_request_num_ = -1;
         }
+        ESP_LOGI(kEspCxxTag, "Database Authenticated.");
+        on_auth_(is_ok, status);
+        auth_request_num_ = -1;
+      } else if (r == listen_request_num_) {
+        if (is_ok) {
+          connect_state_ |= kListenBit;
+        }
+        ESP_LOGI(kEspCxxTag, "Database Listening.");
+        listen_request_num_ = -1;
       }
     }
   } else {

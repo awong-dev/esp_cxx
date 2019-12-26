@@ -23,7 +23,7 @@ class Connection {
   // Examples:
   //   udp://1234  # port 1234 of localhost
   //   udp://123.4.5.1:1234  # port 1234 of 123.4.5.1
-  void Connect(const std::string& udp_url);
+  bool Connect(const std::string& udp_url);
   void Send(std::string_view data);
 
  private:

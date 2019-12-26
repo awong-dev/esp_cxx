@@ -29,8 +29,8 @@ class DataBuffer {
   T Put(T&& obj) {
     std::lock_guard<Mutex> lock(mutex_);
 
-    std::swap(data_[queue_end_], obj);
-    queue_end_ = (queue_end_ + 1) % size;
+    std::swap(data_[queue_head_], obj);
+    queue_head_ = (queue_head_ + 1) % size;
 
     // If num_items_ == size, then this is an overwrite, not
     // an add.
@@ -50,10 +50,10 @@ class DataBuffer {
       return {};
     }
 
-    size_t offset = queue_end_ - num_items_;
+    size_t offset = queue_head_ - num_items_;
     // The head is larger than the tail. Queue is wrapped.
-    if (offset < 0) {
-      offset = size - offset;
+    if (offset > size) {
+      offset = size - (num_items_ - queue_head_);
     }
 
     num_items_--;
@@ -72,7 +72,7 @@ class DataBuffer {
   uint32_t dropped_elements_{0};
 
   // Position to insert the next element.
-  size_t queue_end_ = 0;
+  size_t queue_head_ = 0;
   
   // Current number of items in the queue.
   size_t num_items_ = 0;

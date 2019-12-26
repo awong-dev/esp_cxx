@@ -38,6 +38,9 @@ class FirebaseDatabase {
   // Calls |on_update| when an update is received from the server.
   void SetUpdateHandler(std::function<void()> on_update);
 
+  // Calls |on_auth| when an authentication attempt returns.
+  void SetAuthHandler(std::function<void(bool, cJSON*)> on_auth);
+
   // Sends an update the firebase database.
   void Publish(const std::string& path, unique_cJSON_ptr new_value);
 
@@ -123,6 +126,7 @@ class FirebaseDatabase {
   std::string database_;
   std::string listen_path_;
   std::function<void(void)> on_update_;
+  std::function<void(bool, cJSON*)> on_auth_;
 
   // Network objects.
   MongooseEventManager* event_manager_ = nullptr;
