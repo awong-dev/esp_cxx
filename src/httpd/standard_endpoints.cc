@@ -40,7 +40,7 @@ void StandardEndpoints::StatsEndpoint(HttpRequest request, HttpResponse response
     unique_cJSON_ptr stats(cJSON_CreateObject());
 
     cJSON_AddNumberToObject(stats.get(), "free_heap_bytes", xPortGetFreeHeapSize());
-    cJSON_AddNumberToObject(stats.get(), "uptime_us", esp_timer_get_time());
+    cJSON_AddNumberToObject(stats.get(), "uptime_ms", esp_timer_get_time() / 1000);
 
     auto result = PrintJson(stats.get());
     response.Send(200, strlen(result.get()), HttpResponse::kContentTypeJson, result.get());
