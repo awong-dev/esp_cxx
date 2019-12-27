@@ -42,9 +42,6 @@ class StandardEndpoints {
   // Stateless endpoints.
   static void StatsEndpoint(HttpRequest request, HttpResponse response);
   static void ResetEndpoint(HttpRequest request, HttpResponse response);
-  static void WifiConfigEndpoint(HttpRequest request, HttpResponse response);
-  static void LedOnEndpoint(HttpRequest request, HttpResponse response);
-  static void LedOffEndpoint(HttpRequest request, HttpResponse response);
 
  private:
   ConfigEndpoint config_endpoint_;

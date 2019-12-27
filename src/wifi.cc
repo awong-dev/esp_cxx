@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "esp_cxx/logging.h"
-#include "esp_cxx/nvs_handle.h"
+#include "esp_cxx/config_store.h"
 
 #ifndef FAKE_ESP_IDF
 #include "freertos/FreeRTOS.h"
@@ -27,8 +27,14 @@ static_assert(Wifi::kPasswordBytes == fldsiz(wifi_config_t, sta.password),
 
 namespace {
 
-constexpr char kSsidNvsKey[] = "ssid";
-constexpr char kPasswordNvsKey[] = "password";
+constexpr char kSsidKey[] = "ssid";
+constexpr char kPasswordKey[] = "password";
+constexpr char kWifiConfigPrefix[] = "wifi";
+
+ConfigStore* GetConfigStore() {
+  static ConfigStore config_store;
+  return &config_store;
+}
 
 }  // namespace
 
@@ -44,29 +50,21 @@ Wifi* Wifi::GetInstance() {
 }
 
 std::optional<std::string> Wifi::GetSsid() {
-  NvsHandle nvs_wifi_config = NvsHandle::OpenWifiConfig(NvsHandle::Mode::kReadOnly);
-  return nvs_wifi_config.GetString(kSsidNvsKey);
+  return GetConfigStore()->GetValue(kWifiConfigPrefix, kSsidKey);
 }
 
 std::optional<std::string> Wifi::GetPassword() {
-  NvsHandle nvs_wifi_config = NvsHandle::OpenWifiConfig(NvsHandle::Mode::kReadOnly);
-  return nvs_wifi_config.GetString(kPasswordNvsKey);
+  return GetConfigStore()->GetValue(kWifiConfigPrefix, kPasswordKey);
 }
 
 void Wifi::SetSsid(const std::string& ssid) {
   assert(ssid.size() <= kSsidBytes);
-  NvsHandle nvs_wifi_config = NvsHandle::OpenWifiConfig(NvsHandle::Mode::kReadWrite);
-
-  ESP_LOGD(kEspCxxTag, "Writing ssid: %s", ssid.c_str());
-  nvs_wifi_config.SetString(kSsidNvsKey, ssid);
+  GetConfigStore()->SetValue(kWifiConfigPrefix, kSsidKey, ssid);
 }
 
 void Wifi::SetPassword(const std::string& password) {
   assert(password.size() < kPasswordBytes);
-  NvsHandle nvs_wifi_config = NvsHandle::OpenWifiConfig(NvsHandle::Mode::kReadWrite);
-
-  ESP_LOGD(kEspCxxTag, "Writing password: %s", password.c_str());
-  nvs_wifi_config.SetString(kPasswordNvsKey, password);
+  GetConfigStore()->SetValue(kWifiConfigPrefix, kPasswordKey, password);
 }
 
 void Wifi::SetApEventHandlers(
@@ -168,6 +166,20 @@ void Wifi::OnWifiEvent(esp_event_base_t event_base, int32_t event_id,
         ESP_LOGI(kEspCxxTag, "STA_DISCONNECTED. %d", disconnected_info->reason);
         if (on_ap_disconnect_) {
           on_ap_disconnect_(disconnected_info->reason);
+        }
+        break;
+      }
+
+      case WIFI_EVENT_AP_START: {
+        if (on_ap_connect_) {
+          on_ap_connect_({});
+        }
+        break;
+      }
+
+      case WIFI_EVENT_AP_STOP: {
+        if (on_ap_disconnect_) {
+          on_ap_disconnect_({});
         }
         break;
       }

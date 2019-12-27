@@ -11,10 +11,10 @@ namespace esp_cxx {
 void FirebaseConfig::Load(ConfigStore* store) {
   host_ = store->GetValue(kFirebasePrefix, "host").value_or(std::string());
   database_ = store->GetValue(kFirebasePrefix, "database").value_or(std::string());
-  listen_path_ = store->GetValue(kFirebasePrefix, "path").value_or(std::string());
   auth_token_url_ = store->GetValue(kFirebasePrefix, "auth_url").value_or(std::string());
   device_id_ = store->GetValue(kFirebasePrefix, "device_id").value_or(std::string());
   secret_ = store->GetValue(kFirebasePrefix, "secret").value_or(std::string());
+  listen_path_ = store->GetValue(kFirebasePrefix, "device_root").value_or(std::string()) + "/" + device_id_;
 }
 
 void FirebaseConfig::Save(ConfigStore* store) {
